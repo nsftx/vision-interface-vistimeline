@@ -5,7 +5,7 @@
  * Create a fully customizable, interactive timeline with items and ranges.
  *
  * @version 0.0.0-no-version
- * @date    2020-05-29T13:43:46.465Z
+ * @date    2020-05-29T14:24:17.133Z
  *
  * @copyright (c) 2011-2017 Almende B.V, http://almende.com
  * @copyright (c) 2017-2019 visjs contributors, https://github.com/visjs
@@ -14112,6 +14112,7 @@ var Core = /*#__PURE__*/function () {
     /**
      * Move the window such that given time is centered on screen.
      * @param {Date | number | string} time
+     * @param {boolean} byUser Is event made by user (default false)
      * @param {Object} [options]  Available options:
      *                                `animation: boolean | {duration: number, easingFunction: string}`
      *                                    If true (default), the range is animated
@@ -14124,7 +14125,7 @@ var Core = /*#__PURE__*/function () {
 
   }, {
     key: "moveTo",
-    value: function moveTo(time, options, callback) {
+    value: function moveTo(time, byUser, options, callback) {
       if (typeof arguments[1] == "function") {
         callback = arguments[1];
         options = {};
@@ -14135,8 +14136,10 @@ var Core = /*#__PURE__*/function () {
       var start = t - interval / 2;
       var end = t + interval / 2;
       var animation = options && options.animation !== undefined ? options.animation : true;
+      var eventByUser = byUser !== undefined ? options.byUser : false;
       this.range.setRange(start, end, {
-        animation: animation
+        animation: animation,
+        byUser: eventByUser
       }, callback);
     }
     /**

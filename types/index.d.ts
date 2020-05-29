@@ -607,7 +607,7 @@ export class Timeline {
   /**
    * Move the window such that given time is centered on screen.
    */
-  moveTo(time: DateType, options?: TimelineAnimationOptions, callback?: (properties?: any) => void): void;
+  moveTo(time: DateType, byUser: boolean, options?: TimelineAnimationOptions, callback?: (properties?: any) => void): void;
 
   /**
    * Create an event listener. The callback function is invoked every time the event is triggered.
