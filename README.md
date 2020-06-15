@@ -1,3 +1,8 @@
+# vision build
+run `npm run build -- -e moment,hammerjs`
+git push to vision branch
+vision-interface uses 'vision' branch so just pull from that
+
 # vis-timeline
 
 ![example chart](docs/img/timeline.png)

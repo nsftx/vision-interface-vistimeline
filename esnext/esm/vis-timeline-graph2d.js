@@ -5,7 +5,7 @@
  * Create a fully customizable, interactive timeline with items and ranges.
  *
  * @version 0.0.0-no-version
- * @date    2020-05-29T14:28:44.726Z
+ * @date    2020-06-15T15:05:27.263Z
  *
  * @copyright (c) 2011-2017 Almende B.V, http://almende.com
  * @copyright (c) 2017-2019 visjs contributors, https://github.com/visjs
@@ -4495,7 +4495,7 @@ class Core {
     const start = t - interval / 2;
     const end = t + interval / 2;
     const animation = (options && options.animation !== undefined) ? options.animation : true;
-    const eventByUser = (byUser !== undefined) ? options.byUser : false;
+    const eventByUser = (byUser !== undefined) ? byUser : false;
 
     this.range.setRange(start, end, { animation: animation, byUser: eventByUser }, callback);
   }

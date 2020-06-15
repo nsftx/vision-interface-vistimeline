@@ -5,7 +5,7 @@
  * Create a fully customizable, interactive timeline with items and ranges.
  *
  * @version 0.0.0-no-version
- * @date    2020-05-29T14:25:08.295Z
+ * @date    2020-06-15T15:06:28.181Z
  *
  * @copyright (c) 2011-2017 Almende B.V, http://almende.com
  * @copyright (c) 2017-2019 visjs contributors, https://github.com/visjs
@@ -23,6 +23,8 @@
  *
  * vis.js may be distributed under either license.
  */
+
+import moment$4 from 'moment';
 
 var commonjsGlobal = typeof globalThis !== 'undefined' ? globalThis : typeof window !== 'undefined' ? window : typeof global !== 'undefined' ? global : typeof self !== 'undefined' ? self : {};
 
@@ -13339,7 +13341,7 @@ var ASPDateRegex$1 = /^\/?Date\((-?\d+)/i;
  */
 
 function isMoment(value) {
-  return moment.isMoment(value);
+  return moment$4.isMoment(value);
 }
 /**
  * Convert an object into another type
@@ -13380,7 +13382,7 @@ function convert(object, type) {
     case "number":
     case "Number":
       if (isString(object) && !isNaN(Date.parse(object))) {
-        return moment(object).valueOf();
+        return moment$4(object).valueOf();
       } else {
         // @TODO: I don't think that Number and String constructors are a good idea.
         // This could also fail if the object doesn't have valueOf method or if it's redefined.
@@ -13410,7 +13412,7 @@ function convert(object, type) {
           // object is an ASP date
           return new Date(Number(match[1])); // parse number
         } else {
-          return moment(new Date(object)).toDate(); // parse string
+          return moment$4(new Date(object)).toDate(); // parse string
         }
       } else {
         throw new Error("Cannot convert object of type " + getType(object) + " to type Date");
@@ -13418,13 +13420,13 @@ function convert(object, type) {
 
     case "Moment":
       if (isNumber(object)) {
-        return moment(object);
+        return moment$4(object);
       }
 
       if (object instanceof Date) {
-        return moment(object.valueOf());
+        return moment$4(object.valueOf());
       } else if (isMoment(object)) {
-        return moment(object);
+        return moment$4(object);
       }
 
       if (isString(object)) {
@@ -13432,9 +13434,9 @@ function convert(object, type) {
 
         if (match) {
           // object is an ASP date
-          return moment(Number(match[1])); // parse number
+          return moment$4(Number(match[1])); // parse number
         } else {
-          return moment(object); // parse string
+          return moment$4(object); // parse string
         }
       } else {
         throw new Error("Cannot convert object of type " + getType(object) + " to type Date");
@@ -13454,7 +13456,7 @@ function convert(object, type) {
           // object is an ASP date
           return new Date(Number(match[1])).toISOString(); // parse number
         } else {
-          return moment(object).format(); // ISO 8601
+          return moment$4(object).format(); // ISO 8601
         }
       } else {
         throw new Error("Cannot convert object of type " + getType(object) + " to type ISODate");
@@ -16246,7 +16248,7 @@ var DataView = /*#__PURE__*/function (_DataSetPart2) {
 //
 // Note: This doesn't work in ESM.
 
-var moment$1 = typeof window !== 'undefined' && window['moment'] || moment;
+var moment$1 = typeof window !== 'undefined' && window['moment'] || moment$4;
 
 function ownKeys$3(object, enumerableOnly) { var keys = keys$3(object); if (getOwnPropertySymbols$2) { var symbols = getOwnPropertySymbols$2(object); if (enumerableOnly) symbols = filter$2(symbols).call(symbols, function (sym) { return getOwnPropertyDescriptor$3(object, sym).enumerable; }); keys.push.apply(keys, symbols); } return keys; }
 
@@ -16293,7 +16295,7 @@ function convert$1(object, type) {
     case "number":
     case "Number":
       if (isString(object) && !isNaN(Date.parse(object))) {
-        return moment(object).valueOf();
+        return moment$4(object).valueOf();
       } else {
         // @TODO: I don't think that Number and String constructors are a good idea.
         // This could also fail if the object doesn't have valueOf method or if it's redefined.
@@ -16312,7 +16314,7 @@ function convert$1(object, type) {
 
       if (object instanceof Date) {
         return new Date(object.valueOf());
-      } else if (moment.isMoment(object)) {
+      } else if (moment$4.isMoment(object)) {
         return new Date(object.valueOf());
       }
 
@@ -16323,7 +16325,7 @@ function convert$1(object, type) {
           // object is an ASP date
           return new Date(Number(match[1])); // parse number
         } else {
-          return moment(new Date(object)).toDate(); // parse string
+          return moment$4(new Date(object)).toDate(); // parse string
         }
       } else {
         throw new Error("Cannot convert object of type " + getType(object) + " to type Date");
@@ -16331,13 +16333,13 @@ function convert$1(object, type) {
 
     case "Moment":
       if (isNumber(object)) {
-        return moment(object);
+        return moment$4(object);
       }
 
       if (object instanceof Date) {
-        return moment(object.valueOf());
-      } else if (moment.isMoment(object)) {
-        return moment(object);
+        return moment$4(object.valueOf());
+      } else if (moment$4.isMoment(object)) {
+        return moment$4(object);
       }
 
       if (isString(object)) {
@@ -16345,9 +16347,9 @@ function convert$1(object, type) {
 
         if (match) {
           // object is an ASP date
-          return moment(Number(match[1])); // parse number
+          return moment$4(Number(match[1])); // parse number
         } else {
-          return moment(object); // parse string
+          return moment$4(object); // parse string
         }
       } else {
         throw new Error("Cannot convert object of type " + getType(object) + " to type Date");
@@ -16358,7 +16360,7 @@ function convert$1(object, type) {
         return new Date(object);
       } else if (object instanceof Date) {
         return object.toISOString();
-      } else if (moment.isMoment(object)) {
+      } else if (moment$4.isMoment(object)) {
         return object.toDate().toISOString();
       } else if (isString(object)) {
         match = ASPDateRegex$2.exec(object);
@@ -16367,7 +16369,7 @@ function convert$1(object, type) {
           // object is an ASP date
           return new Date(Number(match[1])).toISOString(); // parse number
         } else {
-          return moment(object).format(); // ISO 8601
+          return moment$4(object).format(); // ISO 8601
         }
       } else {
         throw new Error("Cannot convert object of type " + getType(object) + " to type ISODate");
@@ -16376,7 +16378,7 @@ function convert$1(object, type) {
     case "ASPDate":
       if (isNumber(object)) {
         return "/Date(" + object + ")/";
-      } else if (object instanceof Date || moment.isMoment(object)) {
+      } else if (object instanceof Date || moment$4.isMoment(object)) {
         return "/Date(" + object.valueOf() + ")/";
       } else if (isString(object)) {
         match = ASPDateRegex$2.exec(object);
@@ -25021,7 +25023,7 @@ var Core = /*#__PURE__*/function () {
       var start = t - interval / 2;
       var end = t + interval / 2;
       var animation = options && options.animation !== undefined ? options.animation : true;
-      var eventByUser = byUser !== undefined ? options.byUser : false;
+      var eventByUser = byUser !== undefined ? byUser : false;
       this.range.setRange(start, end, {
         animation: animation,
         byUser: eventByUser
