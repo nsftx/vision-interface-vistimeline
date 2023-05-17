@@ -5,7 +5,7 @@
  * Create a fully customizable, interactive timeline with items and ranges.
  *
  * @version 0.0.0-no-version
- * @date    2020-06-15T15:05:27.263Z
+ * @date    2023-05-17T13:51:49.333Z
  *
  * @copyright (c) 2011-2017 Almende B.V, http://almende.com
  * @copyright (c) 2017-2019 visjs contributors, https://github.com/visjs
@@ -24,29 +24,51 @@
  * vis.js may be distributed under either license.
  */
 
-import moment$3 from 'moment';
-import * as util$1 from 'vis-util/esnext/esm/vis-util.js';
+import moment$4 from 'moment';
+import * as util from 'vis-util/esnext/esm/vis-util.js';
 import { isNumber, isString, getType } from 'vis-util/esnext/esm/vis-util.js';
-import { DataSet, createNewDataPipeFrom, DataView } from 'vis-data/esnext/esm/vis-data.js';
+import { isDataViewLike as isDataViewLike$1, DataSet, createNewDataPipeFrom, DataView } from 'vis-data/esnext/esm/vis-data.js';
+import xssFilter from 'xss';
+import { v4 } from 'uuid';
 import Emitter from 'component-emitter';
 import PropagatingHammer from 'propagating-hammerjs';
 import Hammer$1 from '@egjs/hammerjs';
 import keycharm from 'keycharm';
-import { v4 } from 'uuid';
+
+function getDefaultExportFromCjs (x) {
+	return x && x.__esModule && Object.prototype.hasOwnProperty.call(x, 'default') ? x['default'] : x;
+}
 
 // first check if moment.js is already loaded in the browser window, if so,
 // use this instance. Else, load via commonjs.
 //
 // Note: This doesn't work in ESM.
-var moment = (typeof window !== 'undefined') && window['moment'] || moment$3;
+var moment$2 = (typeof window !== 'undefined') && window['moment'] || moment$4;
+
+var moment$3 = /*@__PURE__*/getDefaultExportFromCjs(moment$2);
 
 // utility functions
+
+/**
+ * Test if an object implements the DataView interface from vis-data.
+ * Uses the idProp property instead of expecting a hardcoded id field "id".
+ */
+function isDataViewLike(obj) {
+    if(!obj) {
+        return false;
+    }
+    let idProp = obj.idProp ?? obj._idProp;
+    if(!idProp) {
+        return false;
+    }
+    return isDataViewLike$1(idProp, obj);
+}
 
 // parse ASP.Net Date pattern,
 // for example '/Date(1198908717056)/' or '/Date(1198908717056-0700)/'
 // code from http://momentjs.com/
 const ASPDateRegex = /^\/?Date\((-?\d+)/i;
-
+const NumericRegex = /^\d+$/;
 /**
  * Convert an object into another type
  *
@@ -82,7 +104,7 @@ function convert(object, type) {
     case "number":
     case "Number":
       if (isString(object) && !isNaN(Date.parse(object))) {
-        return moment$3(object).valueOf();
+        return moment$4(object).valueOf();
       } else {
         // @TODO: I don't think that Number and String constructors are a good idea.
         // This could also fail if the object doesn't have valueOf method or if it's redefined.
@@ -94,48 +116,44 @@ function convert(object, type) {
       return String(object);
 
     case "Date":
-      if (isNumber(object)) {
-        return new Date(object);
+      try {
+        return convert(object, "Moment").toDate();
       }
-      if (object instanceof Date) {
-        return new Date(object.valueOf());
-      } else if (moment$3.isMoment(object)) {
-        return new Date(object.valueOf());
-      }
-      if (isString(object)) {
-        match = ASPDateRegex.exec(object);
-        if (match) {
-          // object is an ASP date
-          return new Date(Number(match[1])); // parse number
+      catch(e){
+        if (e instanceof TypeError) {
+          throw new TypeError(
+            "Cannot convert object of type " + getType(object) + " to type " + type
+          );
         } else {
-          return moment$3(new Date(object)).toDate(); // parse string
+          throw e;
         }
-      } else {
-        throw new Error(
-          "Cannot convert object of type " + getType(object) + " to type Date"
-        );
       }
 
     case "Moment":
       if (isNumber(object)) {
-        return moment$3(object);
+        return moment$4(object);
       }
       if (object instanceof Date) {
-        return moment$3(object.valueOf());
-      } else if (moment$3.isMoment(object)) {
-        return moment$3(object);
+        return moment$4(object.valueOf());
+      } else if (moment$4.isMoment(object)) {
+        return moment$4(object);
       }
       if (isString(object)) {
         match = ASPDateRegex.exec(object);
         if (match) {
           // object is an ASP date
-          return moment$3(Number(match[1])); // parse number
-        } else {
-          return moment$3(object); // parse string
+          return moment$4(Number(match[1])); // parse number
         }
+        match = NumericRegex.exec(object);
+
+        if (match) {
+          return moment$4(Number(object));
+        }
+
+        return moment$4(object); // parse string
       } else {
-        throw new Error(
-          "Cannot convert object of type " + getType(object) + " to type Date"
+        throw new TypeError(
+          "Cannot convert object of type " + getType(object) + " to type " + type
         );
       }
 
@@ -144,7 +162,7 @@ function convert(object, type) {
         return new Date(object);
       } else if (object instanceof Date) {
         return object.toISOString();
-      } else if (moment$3.isMoment(object)) {
+      } else if (moment$4.isMoment(object)) {
         return object.toDate().toISOString();
       } else if (isString(object)) {
         match = ASPDateRegex.exec(object);
@@ -152,7 +170,7 @@ function convert(object, type) {
           // object is an ASP date
           return new Date(Number(match[1])).toISOString(); // parse number
         } else {
-          return moment$3(object).format(); // ISO 8601
+          return moment$4(object).format(); // ISO 8601
         }
       } else {
         throw new Error(
@@ -165,7 +183,7 @@ function convert(object, type) {
     case "ASPDate":
       if (isNumber(object)) {
         return "/Date(" + object + ")/";
-      } else if (object instanceof Date || moment$3.isMoment(object)) {
+      } else if (object instanceof Date || moment$4.isMoment(object)) {
         return "/Date(" + object.valueOf() + ")/";
       } else if (isString(object)) {
         match = ASPDateRegex.exec(object);
@@ -240,6 +258,7 @@ function typeCoerceDataSet(
     remove: (...args) => rawDS.getDataSet().remove(...args),
     update: (...args) => rawDS.getDataSet().update(...args),
     updateOnly: (...args) => rawDS.getDataSet().updateOnly(...args),
+    clear : (...args) => rawDS.getDataSet().clear(...args),
 
     // Read only.
     forEach: coercedDS.forEach.bind(coercedDS),
@@ -262,10 +281,47 @@ function typeCoerceDataSet(
   };
 }
 
-var util = {
-  ...util$1,
-  convert
+// Configure XSS protection
+const setupXSSCleaner = (options) => {
+  const customXSS = new xssFilter.FilterXSS(options);
+  return (string) => customXSS.process(string);
 };
+const setupNoOpCleaner = (string) => string;
+
+// when nothing else is configured: filter XSS with the lib's default options
+let configuredXSSProtection = setupXSSCleaner();
+
+const setupXSSProtection = (options) => {
+  // No options? Do nothing.
+  if (!options) {
+    return;
+  }
+
+  // Disable XSS protection completely on request
+  if (options.disabled === true) {
+    configuredXSSProtection = setupNoOpCleaner;
+    console.warn('You disabled XSS protection for vis-Timeline. I sure hope you know what you\'re doing!');
+  } else {
+    // Configure XSS protection with some custom options.
+    // For a list of valid options check the lib's documentation:
+    // https://github.com/leizongmin/js-xss#custom-filter-rules
+    if (options.filterOptions) {
+      configuredXSSProtection = setupXSSCleaner(options.filterOptions);
+    }
+  }
+};
+
+const availableUtils = {
+  ...util,
+  convert,
+  setupXSSProtection
+};
+
+Object.defineProperty(availableUtils, 'xss', {
+  get: function() {
+    return configuredXSSProtection;
+  }
+});
 
 /** Prototype for visual components */
 class Component {
@@ -285,7 +341,7 @@ class Component {
    */
   setOptions(options) {
     if (options) {
-      util.extend(this.options, options);
+      availableUtils.extend(this.options, options);
     }
   }
 
@@ -837,21 +893,21 @@ function getIsHidden(time, hiddenDates) {
 }
 
 var DateUtil = /*#__PURE__*/Object.freeze({
-  __proto__: null,
-  convertHiddenOptions: convertHiddenOptions,
-  updateHiddenDates: updateHiddenDates,
-  removeDuplicates: removeDuplicates,
-  printDates: printDates,
-  stepOverHiddenDates: stepOverHiddenDates,
-  toScreen: toScreen,
-  toTime: toTime,
-  getHiddenDurationBetween: getHiddenDurationBetween,
-  getHiddenDurationBeforeStart: getHiddenDurationBeforeStart,
-  correctTimeForHidden: correctTimeForHidden,
-  getHiddenDurationBefore: getHiddenDurationBefore,
-  getAccumulatedHiddenDuration: getAccumulatedHiddenDuration,
-  snapAwayFromHidden: snapAwayFromHidden,
-  getIsHidden: getIsHidden
+	__proto__: null,
+	convertHiddenOptions: convertHiddenOptions,
+	correctTimeForHidden: correctTimeForHidden,
+	getAccumulatedHiddenDuration: getAccumulatedHiddenDuration,
+	getHiddenDurationBefore: getHiddenDurationBefore,
+	getHiddenDurationBeforeStart: getHiddenDurationBeforeStart,
+	getHiddenDurationBetween: getHiddenDurationBetween,
+	getIsHidden: getIsHidden,
+	printDates: printDates,
+	removeDuplicates: removeDuplicates,
+	snapAwayFromHidden: snapAwayFromHidden,
+	stepOverHiddenDates: stepOverHiddenDates,
+	toScreen: toScreen,
+	toTime: toTime,
+	updateHiddenDates: updateHiddenDates
 });
 
 /**
@@ -868,7 +924,7 @@ class Range extends Component {
  */
   constructor(body, options) {
     super();
-    const now = moment().hours(0).minutes(0).seconds(0).milliseconds(0);
+    const now = moment$3().hours(0).minutes(0).seconds(0).milliseconds(0);
     const start = now.clone().add(-3, 'days').valueOf();
     const end = now.clone().add(3, 'days').valueOf(); 
     this.millisecondsPerPixelCache = undefined;
@@ -894,7 +950,7 @@ class Range extends Component {
       rtl: false,
       start: null,
       end: null,
-      moment,
+      moment: moment$3,
       direction: 'horizontal', // 'horizontal' or 'vertical'
       moveable: true,
       zoomable: true,
@@ -907,7 +963,7 @@ class Range extends Component {
         offset: 0.5
       }
     };
-    this.options = util.extend({}, this.defaultOptions);
+    this.options = availableUtils.extend({}, this.defaultOptions);
     this.props = {
       touch: {}
     };
@@ -954,7 +1010,7 @@ class Range extends Component {
         'animation', 'direction', 'min', 'max', 'zoomMin', 'zoomMax', 'moveable', 'zoomable',
         'moment', 'activate', 'hiddenDates', 'zoomKey', 'zoomFriction', 'rtl', 'showCurrentTime', 'rollingMode', 'horizontalScroll'
       ];
-      util.selectiveExtend(fields, this.options, options);
+      availableUtils.selectiveExtend(fields, this.options, options);
 
       if (options.rollingMode && options.rollingMode.follow) {
         this.startRolling();
@@ -981,7 +1037,7 @@ class Range extends Component {
 
 
       let interval = me.end - me.start;
-      const t = util.convert(new Date(), 'Date').valueOf();
+      const t = availableUtils.convert(new Date(), 'Date').valueOf();
       const rollingModeOffset = me.options.rollingMode && me.options.rollingMode.offset || 0.5;
 
       const start = t - interval * (rollingModeOffset);
@@ -1046,8 +1102,8 @@ class Range extends Component {
       options.byUser = false;
     }
     const me = this;
-    const finalStart = start != undefined ? util.convert(start, 'Date').valueOf() : null;
-    const finalEnd   = end != undefined   ? util.convert(end, 'Date').valueOf()   : null;
+    const finalStart = start != undefined ? availableUtils.convert(start, 'Date').valueOf() : null;
+    const finalEnd   = end != undefined   ? availableUtils.convert(end, 'Date').valueOf()   : null;
     this._cancelAnimation();
     this.millisecondsPerPixelCache = undefined;
 
@@ -1056,9 +1112,9 @@ class Range extends Component {
       const initEnd = this.end;
       const duration = (typeof options.animation === 'object' && 'duration' in options.animation) ? options.animation.duration : 500;
       const easingName = (typeof options.animation === 'object' && 'easingFunction' in options.animation) ? options.animation.easingFunction : 'easeInOutQuad';
-      const easingFunction = util.easingFunctions[easingName];
+      const easingFunction = availableUtils.easingFunctions[easingName];
       if (!easingFunction) {
-        throw new Error(`Unknown easing function ${JSON.stringify(easingName)}. Choose from: ${Object.keys(util.easingFunctions).join(', ')}`);
+        throw new Error(`Unknown easing function ${JSON.stringify(easingName)}. Choose from: ${Object.keys(availableUtils.easingFunctions).join(', ')}`);
       }
 
       const initTime = Date.now();
@@ -1160,10 +1216,10 @@ class Range extends Component {
    * @private
    */
   _applyRange(start, end) {
-    let newStart = (start != null) ? util.convert(start, 'Date').valueOf() : this.start;
-    let newEnd   = (end != null)   ? util.convert(end, 'Date').valueOf()   : this.end;
-    const max = (this.options.max != null) ? util.convert(this.options.max, 'Date').valueOf() : null;
-    const min = (this.options.min != null) ? util.convert(this.options.min, 'Date').valueOf() : null;
+    let newStart = (start != null) ? availableUtils.convert(start, 'Date').valueOf() : this.start;
+    let newEnd   = (end != null)   ? availableUtils.convert(end, 'Date').valueOf()   : this.end;
+    const max = (this.options.max != null) ? availableUtils.convert(this.options.max, 'Date').valueOf() : null;
+    const min = (this.options.min != null) ? availableUtils.convert(this.options.min, 'Date').valueOf() : null;
     let diff;
 
     // check for valid number
@@ -1527,7 +1583,7 @@ class Range extends Component {
     this.scaleOffset = 0;
     this.deltaDifference = 0;
     // Disable the browser default handling of this event.
-    util.preventDefault(event);
+    availableUtils.preventDefault(event);
   }
 
   /**
@@ -1540,7 +1596,7 @@ class Range extends Component {
     if (!(this.options.zoomable && this.options.moveable)) return;
 
     // Disable the browser default handling of this event.
-    util.preventDefault(event);
+    availableUtils.preventDefault(event);
 
     this.props.touch.allowDragging = false;
 
@@ -1868,7 +1924,7 @@ class TimeStep {
     * @constructor  TimeStep
     */
   constructor(start, end, minimumStep, hiddenDates, options) {
-    this.moment = (options && options.moment) || moment;
+    this.moment = (options && options.moment) || moment$3;
     this.options = options ? options : {};
 
     // variables
@@ -1921,8 +1977,8 @@ class TimeStep {
    * @param {{minorLabels: Object, majorLabels: Object}} format
    */
   setFormat(format) {
-    const defaultFormat = util.deepExtend({}, TimeStep.FORMAT);
-    this.format = util.deepExtend(defaultFormat, format);
+    const defaultFormat = availableUtils.deepExtend({}, TimeStep.FORMAT);
+    this.format = availableUtils.deepExtend(defaultFormat, format);
   }
 
   /**
@@ -1971,7 +2027,7 @@ class TimeStep {
     switch (this.scale) {
       case 'year':
         this.current.year(this.step * Math.floor(this.current.year() / this.step));
-        this.current.month(0);
+        this.current.month(0);                            // eslint-disable-line no-fallthrough
       case 'month':        this.current.date(1);          // eslint-disable-line no-fallthrough
       case 'week':                                        // eslint-disable-line no-fallthrough
       case 'day':                                         // eslint-disable-line no-fallthrough
@@ -2181,7 +2237,7 @@ class TimeStep {
    * @return {Date} snappedDate
    */
   static snap(date, scale, step) {
-    const clone = moment(date);
+    const clone = moment$3(date);
 
     if (scale == 'year') {
       const year = clone.year() + Math.round(clone.month() / 12);
@@ -2354,7 +2410,7 @@ class TimeStep {
         return (date.hours() == 0);
       case 'weekday': // intentional fall through
       case 'day':
-        return (date.date() == 1);
+        return this.options.showWeekScale ? (date.isoWeekday() == 1) : (date.date() == 1);
       case 'week':
         return (date.date() == 1);
       case 'month':
@@ -2605,11 +2661,11 @@ class TimeAxis extends Component {
       showMajorLabels: true,
       showWeekScale: false,
       maxMinorChars: 7,
-      format: TimeStep.FORMAT,
-      moment,
+      format: availableUtils.extend({}, TimeStep.FORMAT),
+      moment: moment$3,
       timeAxis: null
     };
-    this.options = util.extend({}, this.defaultOptions);
+    this.options = availableUtils.extend({}, this.defaultOptions);
 
     this.body = body;
 
@@ -2631,7 +2687,7 @@ class TimeAxis extends Component {
   setOptions(options) {
     if (options) {
       // copy all options that we know
-      util.selectiveExtend([
+      availableUtils.selectiveExtend([
         'showMinorLabels',
         'showMajorLabels',
         'showWeekScale',
@@ -2643,7 +2699,7 @@ class TimeAxis extends Component {
       ], this.options, options);
 
       // deep copy the format options
-      util.selectiveDeepExtend(['format'], this.options, options);
+      availableUtils.selectiveDeepExtend(['format'], this.options, options);
 
       if ('orientation' in options) {
         if (typeof options.orientation === 'string') {
@@ -2657,12 +2713,12 @@ class TimeAxis extends Component {
       // apply locale to moment.js
       // TODO: not so nice, this is applied globally to moment.js
       if ('locale' in options) {
-        if (typeof moment.locale === 'function') {
+        if (typeof moment$3.locale === 'function') {
           // moment.js 2.8.1+
-          moment.locale(options.locale);
+          moment$3.locale(options.locale);
         }
         else {
-          moment.lang(options.locale);
+          moment$3.lang(options.locale);
         }
       }
     }
@@ -2760,8 +2816,8 @@ class TimeAxis extends Component {
     const orientation = this.options.orientation.axis;
 
     // calculate range and step (step such that we have space for 7 characters per label)
-    const start = util.convert(this.body.range.start, 'Number');
-    const end = util.convert(this.body.range.end, 'Number');
+    const start = availableUtils.convert(this.body.range.start, 'Number');
+    const end = availableUtils.convert(this.body.range.end, 'Number');
     const timeLabelsize = this.body.util.toTime((this.props.minorCharWidth || 10) * this.options.maxMinorChars).valueOf();
     let minimumStep = timeLabelsize - getHiddenDurationBefore(this.options.moment, this.body.hiddenDates, this.body.range, timeLabelsize);
     minimumStep -= this.body.util.toTime(0).valueOf();
@@ -2868,7 +2924,7 @@ class TimeAxis extends Component {
     }
 
     // Cleanup leftover DOM elements from the redundant list
-    util.forEach(this.dom.redundant, arr => {
+    availableUtils.forEach(this.dom.redundant, arr => {
       while (arr.length) {
         const elem = arr.pop();
         if (elem && elem.parentNode) {
@@ -2899,7 +2955,7 @@ class TimeAxis extends Component {
       this.dom.foreground.appendChild(label);
     }
     this.dom.minorTexts.push(label);
-    label.innerHTML = text;
+    label.innerHTML = availableUtils.xss(text);
 
 
     let y = (orientation == 'top') ? this.props.majorLabelHeight : 0;
@@ -2932,7 +2988,7 @@ class TimeAxis extends Component {
       this.dom.foreground.appendChild(label);
     }
 
-    label.childNodes[0].innerHTML = text;
+    label.childNodes[0].innerHTML = availableUtils.xss(text);
     label.className = `vis-text vis-major ${className}`;
     //label.title = title; // TODO: this is a heavy operation
 
@@ -3160,7 +3216,7 @@ Activator.prototype.activate = function () {
 
   this.active = true;
   this.dom.overlay.style.display = 'none';
-  util.addClassName(this.dom.container, 'vis-active');
+  availableUtils.addClassName(this.dom.container, 'vis-active');
 
   this.emit('change');
   this.emit('activate');
@@ -3181,7 +3237,7 @@ Activator.prototype.deactivate = function () {
 
   this.active = false;
   this.dom.overlay.style.display = '';
-  util.removeClassName(this.dom.container, 'vis-active');
+  availableUtils.removeClassName(this.dom.container, 'vis-active');
   this.keycharm.unbind('esc', this.escListener);
 
   this.emit('change');
@@ -3317,6 +3373,33 @@ const ja = {
 };
 const ja_JP = ja;
 
+// Swedish
+const sv = {
+  current: 'nuvarande',
+  time: 'tid',
+  deleteSelected: 'Radera valda',
+};
+const sv_SE = sv;
+
+// Norwegian
+const nb = {
+  current: 'nåværende',
+  time: 'tid',
+  deleteSelected: 'Slett valgte',
+};
+const nb_NO = nb;
+const nn = nb;
+const nn_NO = nb;
+
+// Lithuanian
+const lt = {
+  current: 'einamas',
+  time: 'laikas',
+  deleteSelected: 'Pašalinti pasirinktą',
+};
+const lt_LT = lt;
+
+
 const locales = {
   en,
   en_EN,
@@ -3346,6 +3429,14 @@ const locales = {
   pt_PT,
   ja,
   ja_JP,
+  lt,
+  lt_LT,
+  sv,
+  sv_SE,
+  nb,
+  nn,
+  nb_NO,
+  nn_NO
 };
 
 /** A custom time bar */
@@ -3365,18 +3456,18 @@ class CustomTime extends Component {
 
     // default options
     this.defaultOptions = {
-      moment,
+      moment: moment$3,
       locales,
       locale: 'en',
       id: undefined,
       title: undefined
     };
-    this.options = util.extend({}, this.defaultOptions);
+    this.options = availableUtils.extend({}, this.defaultOptions);
     this.setOptions(options);
-    this.options.locales = util.extend({}, locales, this.options.locales);
+    this.options.locales = availableUtils.extend({}, locales, this.options.locales);
     const defaultLocales = this.defaultOptions.locales[this.defaultOptions.locale];
     Object.keys(this.options.locales).forEach(locale => {
-      this.options.locales[locale] = util.extend(
+      this.options.locales[locale] = availableUtils.extend(
         {},
         defaultLocales,
         this.options.locales[locale]
@@ -3405,7 +3496,7 @@ class CustomTime extends Component {
   setOptions(options) {
     if (options) {
       // copy all options that we know
-      util.selectiveExtend(['moment', 'locale', 'locales', 'id', 'title', 'rtl', 'snap'], this.options, options);
+      availableUtils.selectiveExtend(['moment', 'locale', 'locales', 'id', 'title', 'rtl', 'snap'], this.options, options);
     }
   }
 
@@ -3458,6 +3549,8 @@ class CustomTime extends Component {
     this.hammer.on('panmove',  this._onDrag.bind(this));
     this.hammer.on('panend',   this._onDragEnd.bind(this));
     this.hammer.get('pan').set({threshold:5, direction: Hammer.DIRECTION_ALL});
+    // delay addition on item click for trackpads...
+    this.hammer.get('press').set({time:10000});
   }
 
   /**
@@ -3527,7 +3620,7 @@ class CustomTime extends Component {
    * @param {Date | number | string} time
    */
   setCustomTime(time) {
-    this.customTime = util.convert(time, 'Date');
+    this.customTime = availableUtils.convert(time, 'Date');
     this.redraw();
   }
 
@@ -3547,7 +3640,7 @@ class CustomTime extends Component {
   setCustomMarker(title, editable) {
     const marker = document.createElement('div');
     marker.className = `vis-custom-time-marker`;
-    marker.innerHTML = title;
+    marker.innerHTML = availableUtils.xss(title);
     marker.style.position = 'absolute';
 
     if (editable) {
@@ -3692,1377 +3785,1384 @@ class CustomTime extends Component {
  * @constructor Core
  */
 class Core {
-  /**
-   * Create the main DOM for the Core: a root panel containing left, right,
-   * top, bottom, content, and background panel.
-   * @param {Element} container  The container element where the Core will
-   *                             be attached.
-   * @protected
-   */
-  _create(container) {
-    this.dom = {};
-
-    this.dom.container = container;
-    this.dom.container.style.position = 'relative';
-
-    this.dom.root                 = document.createElement('div');
-    this.dom.background           = document.createElement('div');
-    this.dom.backgroundVertical   = document.createElement('div');
-    this.dom.backgroundHorizontal = document.createElement('div');
-    this.dom.centerContainer      = document.createElement('div');
-    this.dom.leftContainer        = document.createElement('div');
-    this.dom.rightContainer       = document.createElement('div');
-    this.dom.center               = document.createElement('div');
-    this.dom.left                 = document.createElement('div');
-    this.dom.right                = document.createElement('div');
-    this.dom.top                  = document.createElement('div');
-    this.dom.bottom               = document.createElement('div');
-    this.dom.shadowTop            = document.createElement('div');
-    this.dom.shadowBottom         = document.createElement('div');
-    this.dom.shadowTopLeft        = document.createElement('div');
-    this.dom.shadowBottomLeft     = document.createElement('div');
-    this.dom.shadowTopRight       = document.createElement('div');
-    this.dom.shadowBottomRight    = document.createElement('div');
-    this.dom.rollingModeBtn       = document.createElement('div');
-    this.dom.loadingScreen        = document.createElement('div');
-
-    this.dom.root.className                 = 'vis-timeline';
-    this.dom.background.className           = 'vis-panel vis-background';
-    this.dom.backgroundVertical.className   = 'vis-panel vis-background vis-vertical';
-    this.dom.backgroundHorizontal.className = 'vis-panel vis-background vis-horizontal';
-    this.dom.centerContainer.className      = 'vis-panel vis-center';
-    this.dom.leftContainer.className        = 'vis-panel vis-left';
-    this.dom.rightContainer.className       = 'vis-panel vis-right';
-    this.dom.top.className                  = 'vis-panel vis-top';
-    this.dom.bottom.className               = 'vis-panel vis-bottom';
-    this.dom.left.className                 = 'vis-content';
-    this.dom.center.className               = 'vis-content';
-    this.dom.right.className                = 'vis-content';
-    this.dom.shadowTop.className            = 'vis-shadow vis-top';
-    this.dom.shadowBottom.className         = 'vis-shadow vis-bottom';
-    this.dom.shadowTopLeft.className        = 'vis-shadow vis-top';
-    this.dom.shadowBottomLeft.className     = 'vis-shadow vis-bottom';
-    this.dom.shadowTopRight.className       = 'vis-shadow vis-top';
-    this.dom.shadowBottomRight.className    = 'vis-shadow vis-bottom';
-    this.dom.rollingModeBtn.className       = 'vis-rolling-mode-btn';
-    this.dom.loadingScreen.className        = 'vis-loading-screen';
-
-    this.dom.root.appendChild(this.dom.background);
-    this.dom.root.appendChild(this.dom.backgroundVertical);
-    this.dom.root.appendChild(this.dom.backgroundHorizontal);
-    this.dom.root.appendChild(this.dom.centerContainer);
-    this.dom.root.appendChild(this.dom.leftContainer);
-    this.dom.root.appendChild(this.dom.rightContainer);
-    this.dom.root.appendChild(this.dom.top);
-    this.dom.root.appendChild(this.dom.bottom);
-    this.dom.root.appendChild(this.dom.rollingModeBtn);
-
-    this.dom.centerContainer.appendChild(this.dom.center);
-    this.dom.leftContainer.appendChild(this.dom.left);
-    this.dom.rightContainer.appendChild(this.dom.right);
-    this.dom.centerContainer.appendChild(this.dom.shadowTop);
-    this.dom.centerContainer.appendChild(this.dom.shadowBottom);
-    this.dom.leftContainer.appendChild(this.dom.shadowTopLeft);
-    this.dom.leftContainer.appendChild(this.dom.shadowBottomLeft);
-    this.dom.rightContainer.appendChild(this.dom.shadowTopRight);
-    this.dom.rightContainer.appendChild(this.dom.shadowBottomRight);
-    
-    // size properties of each of the panels
-    this.props = {
-      root: {},
-      background: {},
-      centerContainer: {},
-      leftContainer: {},
-      rightContainer: {},
-      center: {},
-      left: {},
-      right: {},
-      top: {},
-      bottom: {},
-      border: {},
-      scrollTop: 0,
-      scrollTopMin: 0
-    };
-
-    this.on('rangechange', () => {
-      if (this.initialDrawDone === true) {
-        this._redraw();
-      }
-    });
-    this.on('rangechanged', () => {
-      if (!this.initialRangeChangeDone) {
-        this.initialRangeChangeDone = true;
-      }
-    });
-    this.on('touch',       this._onTouch.bind(this));
-    this.on('panmove',         this._onDrag.bind(this));
-
-    const me = this;
-    this._origRedraw = this._redraw.bind(this);
-    this._redraw = util.throttle(this._origRedraw);
-
-    this.on('_change', properties => {
-      if (me.itemSet && me.itemSet.initialItemSetDrawn && properties && properties.queue == true) {
-        me._redraw();
-      } else {
-        me._origRedraw();
-      }
-    });
-
-    // create event listeners for all interesting events, these events will be
-    // emitted via emitter
-    this.hammer = new Hammer(this.dom.root);
-    const pinchRecognizer = this.hammer.get('pinch').set({enable: true});
-    pinchRecognizer && disablePreventDefaultVertically(pinchRecognizer);
-    this.hammer.get('pan').set({threshold:5, direction: Hammer.DIRECTION_ALL});
-    this.timelineListeners = {};
-
-    const events = [
-      'tap', 'doubletap', 'press',
-      'pinch',
-      'pan', 'panstart', 'panmove', 'panend'
-        // TODO: cleanup
-      //'touch', 'pinch',
-      //'tap', 'doubletap', 'hold',
-      //'dragstart', 'drag', 'dragend',
-      //'mousewheel', 'DOMMouseScroll' // DOMMouseScroll is needed for Firefox
-    ];
-    events.forEach(type => {
-      const listener = event => {
-        if (me.isActive()) {
-          me.emit(type, event);
-        }
-      };
-      me.hammer.on(type, listener);
-      me.timelineListeners[type] = listener;
-    });
-
-    // emulate a touch event (emitted before the start of a pan, pinch, tap, or press)
-    onTouch(this.hammer, event => {
-      me.emit('touch', event);
-    });
-
-    // emulate a release event (emitted after a pan, pinch, tap, or press)
-    onRelease(this.hammer, event => {
-      me.emit('release', event);
-    });
-
     /**
-     *
-     * @param {WheelEvent} event
+     * Create the main DOM for the Core: a root panel containing left, right,
+     * top, bottom, content, and background panel.
+     * @param {Element} container  The container element where the Core will
+     *                             be attached.
+     * @protected
      */
-    function onMouseWheel(event) {
+    _create(container) {
+        this.dom = {};
 
-      // Reasonable default wheel deltas
-      const LINE_HEIGHT = 40;
-      const PAGE_HEIGHT = 800;
+        this.dom.container = container;
+        this.dom.container.style.position = 'relative';
 
-      if (this.isActive()) {
-        this.emit('mousewheel', event);
-      }
+        this.dom.root = document.createElement('div');
+        this.dom.background = document.createElement('div');
+        this.dom.backgroundVertical = document.createElement('div');
+        this.dom.backgroundHorizontal = document.createElement('div');
+        this.dom.centerContainer = document.createElement('div');
+        this.dom.leftContainer = document.createElement('div');
+        this.dom.rightContainer = document.createElement('div');
+        this.dom.center = document.createElement('div');
+        this.dom.left = document.createElement('div');
+        this.dom.right = document.createElement('div');
+        this.dom.top = document.createElement('div');
+        this.dom.bottom = document.createElement('div');
+        this.dom.shadowTop = document.createElement('div');
+        this.dom.shadowBottom = document.createElement('div');
+        this.dom.shadowTopLeft = document.createElement('div');
+        this.dom.shadowBottomLeft = document.createElement('div');
+        this.dom.shadowTopRight = document.createElement('div');
+        this.dom.shadowBottomRight = document.createElement('div');
+        this.dom.rollingModeBtn = document.createElement('div');
+        this.dom.loadingScreen = document.createElement('div');
 
-      // deltaX and deltaY normalization from jquery.mousewheel.js
-      let deltaX = 0;
-      let deltaY = 0;
+        this.dom.root.className = 'vis-timeline';
+        this.dom.background.className = 'vis-panel vis-background';
+        this.dom.backgroundVertical.className = 'vis-panel vis-background vis-vertical';
+        this.dom.backgroundHorizontal.className = 'vis-panel vis-background vis-horizontal';
+        this.dom.centerContainer.className = 'vis-panel vis-center';
+        this.dom.leftContainer.className = 'vis-panel vis-left';
+        this.dom.rightContainer.className = 'vis-panel vis-right';
+        this.dom.top.className = 'vis-panel vis-top';
+        this.dom.bottom.className = 'vis-panel vis-bottom';
+        this.dom.left.className = 'vis-content';
+        this.dom.center.className = 'vis-content';
+        this.dom.right.className = 'vis-content';
+        this.dom.shadowTop.className = 'vis-shadow vis-top';
+        this.dom.shadowBottom.className = 'vis-shadow vis-bottom';
+        this.dom.shadowTopLeft.className = 'vis-shadow vis-top';
+        this.dom.shadowBottomLeft.className = 'vis-shadow vis-bottom';
+        this.dom.shadowTopRight.className = 'vis-shadow vis-top';
+        this.dom.shadowBottomRight.className = 'vis-shadow vis-bottom';
+        this.dom.rollingModeBtn.className = 'vis-rolling-mode-btn';
+        this.dom.loadingScreen.className = 'vis-loading-screen';
 
-      // Old school scrollwheel delta
-      if ( 'detail'      in event ) { deltaY = event.detail * -1;      }
-      if ( 'wheelDelta'  in event ) { deltaY = event.wheelDelta;       }
-      if ( 'wheelDeltaY' in event ) { deltaY = event.wheelDeltaY;      }
-      if ( 'wheelDeltaX' in event ) { deltaX = event.wheelDeltaX * -1; }
+        this.dom.root.appendChild(this.dom.background);
+        this.dom.root.appendChild(this.dom.backgroundVertical);
+        this.dom.root.appendChild(this.dom.backgroundHorizontal);
+        this.dom.root.appendChild(this.dom.centerContainer);
+        this.dom.root.appendChild(this.dom.leftContainer);
+        this.dom.root.appendChild(this.dom.rightContainer);
+        this.dom.root.appendChild(this.dom.top);
+        this.dom.root.appendChild(this.dom.bottom);
+        this.dom.root.appendChild(this.dom.rollingModeBtn);
 
-      // Firefox < 17 horizontal scrolling related to DOMMouseScroll event
-      if ( 'axis' in event && event.axis === event.HORIZONTAL_AXIS ) {
-        deltaX = deltaY * -1;
-        deltaY = 0;
-      }
+        this.dom.centerContainer.appendChild(this.dom.center);
+        this.dom.leftContainer.appendChild(this.dom.left);
+        this.dom.rightContainer.appendChild(this.dom.right);
+        this.dom.centerContainer.appendChild(this.dom.shadowTop);
+        this.dom.centerContainer.appendChild(this.dom.shadowBottom);
+        this.dom.leftContainer.appendChild(this.dom.shadowTopLeft);
+        this.dom.leftContainer.appendChild(this.dom.shadowBottomLeft);
+        this.dom.rightContainer.appendChild(this.dom.shadowTopRight);
+        this.dom.rightContainer.appendChild(this.dom.shadowBottomRight);
 
-      // New school wheel delta (wheel event)
-      if ( 'deltaY' in event ) {
-        deltaY = event.deltaY * -1;
-      }
-      if ( 'deltaX' in event ) {
-        deltaX = event.deltaX;
-      }
+        // size properties of each of the panels
+        this.props = {
+            root: {},
+            background: {},
+            centerContainer: {},
+            leftContainer: {},
+            rightContainer: {},
+            center: {},
+            left: {},
+            right: {},
+            top: {},
+            bottom: {},
+            border: {},
+            scrollTop: 0,
+            scrollTopMin: 0
+        };
 
-      // Normalize deltas
-      if (event.deltaMode) {
-          if (event.deltaMode === 1) {   // delta in LINE units
-            deltaX *= LINE_HEIGHT;
-            deltaY *= LINE_HEIGHT;
-          } else {                       // delta in PAGE units
-            deltaX *= LINE_HEIGHT;
-            deltaY *= PAGE_HEIGHT;
-          }
+        this.on('rangechange', () => {
+            if (this.initialDrawDone === true) {
+                this._redraw();
+            }
+        });
+        this.on('rangechanged', () => {
+            if (!this.initialRangeChangeDone) {
+                this.initialRangeChangeDone = true;
+            }
+        });
+        this.on('touch', this._onTouch.bind(this));
+        this.on('panmove', this._onDrag.bind(this));
+
+        const me = this;
+        this._origRedraw = this._redraw.bind(this);
+        this._redraw = availableUtils.throttle(this._origRedraw);
+
+        this.on('_change', properties => {
+            if (me.itemSet && me.itemSet.initialItemSetDrawn && properties && properties.queue == true) {
+                me._redraw();
+            } else {
+                me._origRedraw();
+            }
+        });
+
+        // create event listeners for all interesting events, these events will be
+        // emitted via emitter
+        this.hammer = new Hammer(this.dom.root);
+        const pinchRecognizer = this.hammer.get('pinch').set({enable: true});
+        pinchRecognizer && disablePreventDefaultVertically(pinchRecognizer);
+        this.hammer.get('pan').set({threshold: 5, direction: Hammer.DIRECTION_ALL});
+        this.timelineListeners = {};
+
+        const events = [
+            'tap', 'doubletap', 'press',
+            'pinch',
+            'pan', 'panstart', 'panmove', 'panend'
+            // TODO: cleanup
+            //'touch', 'pinch',
+            //'tap', 'doubletap', 'hold',
+            //'dragstart', 'drag', 'dragend',
+            //'mousewheel', 'DOMMouseScroll' // DOMMouseScroll is needed for Firefox
+        ];
+        events.forEach(type => {
+            const listener = event => {
+                if (me.isActive()) {
+                    me.emit(type, event);
+                }
+            };
+            me.hammer.on(type, listener);
+            me.timelineListeners[type] = listener;
+        });
+
+        // emulate a touch event (emitted before the start of a pan, pinch, tap, or press)
+        onTouch(this.hammer, event => {
+            me.emit('touch', event);
+        });
+
+        // emulate a release event (emitted after a pan, pinch, tap, or press)
+        onRelease(this.hammer, event => {
+            me.emit('release', event);
+        });
+
+        /**
+         *
+         * @param {WheelEvent} event
+         */
+        function onMouseWheel(event) {
+
+            // Reasonable default wheel deltas
+            const LINE_HEIGHT = 40;
+            const PAGE_HEIGHT = 800;
+
+            if (this.isActive()) {
+                this.emit('mousewheel', event);
+            }
+
+            // deltaX and deltaY normalization from jquery.mousewheel.js
+            let deltaX = 0;
+            let deltaY = 0;
+
+            // Old school scrollwheel delta
+            if ('detail' in event) {
+                deltaY = event.detail * -1;
+            }
+            if ('wheelDelta' in event) {
+                deltaY = event.wheelDelta;
+            }
+            if ('wheelDeltaY' in event) {
+                deltaY = event.wheelDeltaY;
+            }
+            if ('wheelDeltaX' in event) {
+                deltaX = event.wheelDeltaX * -1;
+            }
+
+            // Firefox < 17 horizontal scrolling related to DOMMouseScroll event
+            if ('axis' in event && event.axis === event.HORIZONTAL_AXIS) {
+                deltaX = deltaY * -1;
+                deltaY = 0;
+            }
+
+            // New school wheel delta (wheel event)
+            if ('deltaY' in event) {
+                deltaY = event.deltaY * -1;
+            }
+            if ('deltaX' in event) {
+                deltaX = event.deltaX;
+            }
+
+            // Normalize deltas
+            if (event.deltaMode) {
+                if (event.deltaMode === 1) {   // delta in LINE units
+                    deltaX *= LINE_HEIGHT;
+                    deltaY *= LINE_HEIGHT;
+                } else {                       // delta in PAGE units
+                    deltaX *= LINE_HEIGHT;
+                    deltaY *= PAGE_HEIGHT;
+                }
+            }
+            // Prevent scrolling when zooming (no zoom key, or pressing zoom key)
+            if (this.options.preferZoom) {
+                if (!this.options.zoomKey || event[this.options.zoomKey]) return;
+            } else {
+                if (this.options.zoomKey && event[this.options.zoomKey]) return
+            }
+            // Don't preventDefault if you can't scroll
+            if (!this.options.verticalScroll && !this.options.horizontalScroll) return;
+
+            if (this.options.verticalScroll && Math.abs(deltaY) >= Math.abs(deltaX)) {
+                const current = this.props.scrollTop;
+                const adjusted = current + deltaY;
+
+                if (this.isActive()) {
+                    const newScrollTop = this._setScrollTop(adjusted);
+
+                    if (newScrollTop !== current) {
+                        this._redraw();
+                        this.emit('scroll', event);
+
+                        // Prevent default actions caused by mouse wheel
+                        // (else the page and timeline both scroll)
+                        event.preventDefault();
+                    }
+                }
+            } else if (this.options.horizontalScroll) {
+                const delta = Math.abs(deltaX) >= Math.abs(deltaY) ? deltaX : deltaY;
+
+                // calculate a single scroll jump relative to the range scale
+                const diff = (delta / 120) * (this.range.end - this.range.start) / 20;
+                // calculate new start and end
+                const newStart = this.range.start + diff;
+                const newEnd = this.range.end + diff;
+
+                const options = {
+                    animation: false,
+                    byUser: true,
+                    event
+                };
+                this.range.setRange(newStart, newEnd, options);
+
+                event.preventDefault();
+            }
         }
-        // Prevent scrolling when zooming (no zoom key, or pressing zoom key)
-      if (this.options.preferZoom) {
-        if (!this.options.zoomKey || event[this.options.zoomKey]) return;
-      } else {
-        if (this.options.zoomKey && event[this.options.zoomKey]) return
-      }
-      // Don't preventDefault if you can't scroll
-      if (!this.options.verticalScroll && !this.options.horizontalScroll) return;
 
-      if (this.options.verticalScroll && Math.abs(deltaY) >= Math.abs(deltaX)) {
-        const current = this.props.scrollTop;
-        const adjusted = current + deltaY;
+        // Add modern wheel event listener
+        const wheelType = "onwheel" in document.createElement("div") ? "wheel" : // Modern browsers support "wheel"
+            document.onmousewheel !== undefined ? "mousewheel" : // Webkit and IE support at least "mousewheel"
 
-        if (this.isActive()) {
-          const newScrollTop = this._setScrollTop(adjusted);
+                // DOMMouseScroll - Older Firefox versions use "DOMMouseScroll"
+                // onmousewheel - All the use "onmousewheel"
+                this.dom.centerContainer.addEventListener ? "DOMMouseScroll" : "onmousewheel";
+        this.dom.top.addEventListener ? "DOMMouseScroll" : "onmousewheel";
+        this.dom.bottom.addEventListener ? "DOMMouseScroll" : "onmousewheel";
+        this.dom.centerContainer.addEventListener(wheelType, onMouseWheel.bind(this), false);
+        this.dom.top.addEventListener(wheelType, onMouseWheel.bind(this), false);
+        this.dom.bottom.addEventListener(wheelType, onMouseWheel.bind(this), false);
 
-          if (newScrollTop !== current) {
-            this._redraw();
-            this.emit('scroll', event);
 
-            // Prevent default actions caused by mouse wheel
-            // (else the page and timeline both scroll)
+        /**
+         *
+         * @param {scroll} event
+         */
+        function onMouseScrollSide(event) {
+            if (!me.options.verticalScroll) return;
+
             event.preventDefault();
-          }
+            if (me.isActive()) {
+                const adjusted = -event.target.scrollTop;
+                me._setScrollTop(adjusted);
+                me._redraw();
+                me.emit('scrollSide', event);
+            }
         }
-      } else if (this.options.horizontalScroll) {
-        const delta = Math.abs(deltaX) >= Math.abs(deltaY) ? deltaX : deltaY;
 
-        // calculate a single scroll jump relative to the range scale
-        const diff = (delta / 120) * (this.range.end - this.range.start) / 20;
-        // calculate new start and end
-        const newStart = this.range.start + diff;
-        const newEnd = this.range.end + diff;
+        this.dom.left.parentNode.addEventListener('scroll', onMouseScrollSide.bind(this));
+        this.dom.right.parentNode.addEventListener('scroll', onMouseScrollSide.bind(this));
 
-        const options = {
-          animation: false,
-          byUser: true,
-          event
-        };
-        this.range.setRange(newStart, newEnd, options);
+        let itemAddedToTimeline = false;
 
-        event.preventDefault();
-      }
+        /**
+         *
+         * @param {dragover} event
+         * @returns {boolean}
+         */
+        function handleDragOver(event) {
+            if (event.preventDefault) {
+                me.emit('dragover', me.getEventProperties(event));
+                event.preventDefault(); // Necessary. Allows us to drop.
+            }
+
+            // make sure your target is a timeline element
+            if (!(event.target.className.indexOf("timeline") > -1)) return;
+
+            // make sure only one item is added every time you're over the timeline
+            if (itemAddedToTimeline) return;
+
+            event.dataTransfer.dropEffect = 'move';
+            itemAddedToTimeline = true;
+            return false;
+        }
+
+        /**
+         *
+         * @param {drop} event
+         * @returns {boolean}
+         */
+        function handleDrop(event) {
+            // prevent redirect to blank page - Firefox
+            if (event.preventDefault) {
+                event.preventDefault();
+            }
+            if (event.stopPropagation) {
+                event.stopPropagation();
+            }
+            // return when dropping non-timeline items
+            try {
+                var itemData = JSON.parse(event.dataTransfer.getData("text"));
+                if (!itemData || !itemData.content) return
+            } catch (err) {
+                return false;
+            }
+
+            itemAddedToTimeline = false;
+            event.center = {
+                x: event.clientX,
+                y: event.clientY
+            };
+
+            if (itemData.target !== 'item') {
+                me.itemSet._onAddItem(event);
+            } else {
+                me.itemSet._onDropObjectOnItem(event);
+            }
+            me.emit('drop', me.getEventProperties(event));
+            return false;
+        }
+
+        this.dom.center.addEventListener('dragover', handleDragOver.bind(this), false);
+        this.dom.center.addEventListener('drop', handleDrop.bind(this), false);
+
+        this.customTimes = [];
+
+        // store state information needed for touch events
+        this.touch = {};
+
+        this.redrawCount = 0;
+        this.initialDrawDone = false;
+        this.initialRangeChangeDone = false;
+
+        // attach the root panel to the provided container
+        if (!container) throw new Error('No container provided');
+        container.appendChild(this.dom.root);
+        container.appendChild(this.dom.loadingScreen);
     }
 
-    // Add modern wheel event listener
-    const wheelType = "onwheel" in document.createElement("div") ? "wheel" : // Modern browsers support "wheel"
-    document.onmousewheel !== undefined ? "mousewheel" : // Webkit and IE support at least "mousewheel"
-    
-    // DOMMouseScroll - Older Firefox versions use "DOMMouseScroll"
-    // onmousewheel - All the use "onmousewheel"
-    this.dom.centerContainer.addEventListener ? "DOMMouseScroll" :  "onmousewheel";
-    this.dom.top.addEventListener ? "DOMMouseScroll" : "onmousewheel";
-    this.dom.bottom.addEventListener ? "DOMMouseScroll" : "onmousewheel";
-    this.dom.centerContainer.addEventListener(wheelType, onMouseWheel.bind(this), false);
-    this.dom.top.addEventListener(wheelType, onMouseWheel.bind(this), false);
-    this.dom.bottom.addEventListener(wheelType, onMouseWheel.bind(this), false);
-
-
     /**
-     *
-     * @param {scroll} event
+     * Set options. Options will be passed to all components loaded in the Timeline.
+     * @param {Object} [options]
+     *                           {String} orientation
+     *                              Vertical orientation for the Timeline,
+     *                              can be 'bottom' (default) or 'top'.
+     *                           {string | number} width
+     *                              Width for the timeline, a number in pixels or
+     *                              a css string like '1000px' or '75%'. '100%' by default.
+     *                           {string | number} height
+     *                              Fixed height for the Timeline, a number in pixels or
+     *                              a css string like '400px' or '75%'. If undefined,
+     *                              The Timeline will automatically size such that
+     *                              its contents fit.
+     *                           {string | number} minHeight
+     *                              Minimum height for the Timeline, a number in pixels or
+     *                              a css string like '400px' or '75%'.
+     *                           {string | number} maxHeight
+     *                              Maximum height for the Timeline, a number in pixels or
+     *                              a css string like '400px' or '75%'.
+     *                           {number | Date | string} start
+     *                              Start date for the visible window
+     *                           {number | Date | string} end
+     *                              End date for the visible window
      */
-    function onMouseScrollSide(event) {
-      if (!me.options.verticalScroll) return;
-      
-      if (me._isProgramaticallyScrolled) {
-        me._isProgramaticallyScrolled = false;
-        return;
-      }
-      
-      event.preventDefault();
-      if (me.isActive()) {
-        const adjusted = -event.target.scrollTop;
-        me._setScrollTop(adjusted);
-        me._redraw();
-        me.emit('scrollSide', event);
-      }
+    setOptions(options) {
+        if (options) {
+            // copy the known options
+            const fields = [
+                'width', 'height', 'minHeight', 'maxHeight', 'autoResize',
+                'start', 'end', 'clickToUse', 'dataAttributes', 'hiddenDates',
+                'locale', 'locales', 'moment', 'preferZoom', 'rtl', 'zoomKey',
+                'horizontalScroll', 'verticalScroll', 'longSelectPressTime', 'snap'
+            ];
+            availableUtils.selectiveExtend(fields, this.options, options);
+            this.dom.rollingModeBtn.style.visibility = 'hidden';
+
+            if (this.options.rtl) {
+                this.dom.container.style.direction = "rtl";
+                this.dom.backgroundVertical.className = 'vis-panel vis-background vis-vertical-rtl';
+            }
+
+            if (this.options.verticalScroll) {
+                if (this.options.rtl) {
+                    this.dom.rightContainer.className = 'vis-panel vis-right vis-vertical-scroll';
+                } else {
+                    this.dom.leftContainer.className = 'vis-panel vis-left vis-vertical-scroll';
+                }
+            }
+
+            if (typeof this.options.orientation !== 'object') {
+                this.options.orientation = {item: undefined, axis: undefined};
+            }
+            if ('orientation' in options) {
+                if (typeof options.orientation === 'string') {
+                    this.options.orientation = {
+                        item: options.orientation,
+                        axis: options.orientation
+                    };
+                } else if (typeof options.orientation === 'object') {
+                    if ('item' in options.orientation) {
+                        this.options.orientation.item = options.orientation.item;
+                    }
+                    if ('axis' in options.orientation) {
+                        this.options.orientation.axis = options.orientation.axis;
+                    }
+                }
+            }
+
+            if (this.options.orientation.axis === 'both') {
+                if (!this.timeAxis2) {
+                    const timeAxis2 = this.timeAxis2 = new TimeAxis(this.body);
+                    timeAxis2.setOptions = options => {
+                        const _options = options ? availableUtils.extend({}, options) : {};
+                        _options.orientation = 'top'; // override the orientation option, always top
+                        TimeAxis.prototype.setOptions.call(timeAxis2, _options);
+                    };
+                    this.components.push(timeAxis2);
+                }
+            } else {
+                if (this.timeAxis2) {
+                    const index = this.components.indexOf(this.timeAxis2);
+                    if (index !== -1) {
+                        this.components.splice(index, 1);
+                    }
+                    this.timeAxis2.destroy();
+                    this.timeAxis2 = null;
+                }
+            }
+
+            // if the graph2d's drawPoints is a function delegate the callback to the onRender property
+            if (typeof options.drawPoints == 'function') {
+                options.drawPoints = {
+                    onRender: options.drawPoints
+                };
+            }
+
+            if ('hiddenDates' in this.options) {
+                convertHiddenOptions(this.options.moment, this.body, this.options.hiddenDates);
+            }
+
+            if ('clickToUse' in options) {
+                if (options.clickToUse) {
+                    if (!this.activator) {
+                        this.activator = new Activator(this.dom.root);
+                    }
+                } else {
+                    if (this.activator) {
+                        this.activator.destroy();
+                        delete this.activator;
+                    }
+                }
+            }
+
+            // enable/disable autoResize
+            this._initAutoResize();
+        }
+
+        // propagate options to all components
+        this.components.forEach(component => component.setOptions(options));
+
+        // enable/disable configure
+        if ('configure' in options) {
+            if (!this.configurator) {
+                this.configurator = this._createConfigurator();
+            }
+
+            this.configurator.setOptions(options.configure);
+
+            // collect the settings of all components, and pass them to the configuration system
+            const appliedOptions = availableUtils.deepExtend({}, this.options);
+            this.components.forEach(component => {
+                availableUtils.deepExtend(appliedOptions, component.options);
+            });
+            this.configurator.setModuleOptions({global: appliedOptions});
+        }
+
+        this._redraw();
     }
 
-    this.dom.left.parentNode.addEventListener('scroll', onMouseScrollSide.bind(this));
-    this.dom.right.parentNode.addEventListener('scroll', onMouseScrollSide.bind(this));
-
-    let itemAddedToTimeline = false;
-
     /**
-     *
-     * @param {dragover} event
+     * Returns true when the Timeline is active.
      * @returns {boolean}
      */
-    function handleDragOver(event) {
-      if (event.preventDefault) {
-        me.emit('dragover', me.getEventProperties(event));
-        event.preventDefault(); // Necessary. Allows us to drop.
-      }
-
-      // make sure your target is a timeline element
-      if (!(event.target.className.indexOf("timeline") > -1)) return;
-
-      // make sure only one item is added every time you're over the timeline
-      if (itemAddedToTimeline) return;
-
-      event.dataTransfer.dropEffect = 'move';  
-      itemAddedToTimeline = true;
-      return false;
+    isActive() {
+        return !this.activator || this.activator.active;
     }
 
     /**
-     *
-     * @param {drop} event
-     * @returns {boolean}
+     * Destroy the Core, clean up all DOM elements and event listeners.
      */
-    function handleDrop(event) {
-      // prevent redirect to blank page - Firefox
-      if(event.preventDefault) { event.preventDefault(); }
-      if(event.stopPropagation) { event.stopPropagation(); }
-      // return when dropping non-timeline items
-      try {
-        var itemData = JSON.parse(event.dataTransfer.getData("text"));
-        if (!itemData || !itemData.content) return
-      } catch (err) {
-        return false;
-      }
+    destroy() {
+        // unbind datasets
+        this.setItems(null);
+        this.setGroups(null);
 
-      itemAddedToTimeline = false;
-      event.center = {
-        x: event.clientX,
-        y: event.clientY
-      };
+        // remove all event listeners
+        this.off();
 
-      if (itemData.target !== 'item') {
-        me.itemSet._onAddItem(event);
-      } else {
-        me.itemSet._onDropObjectOnItem(event);
-      }
-      me.emit('drop', me.getEventProperties(event));
-      return false;
-    }
+        // stop checking for changed size
+        this._stopAutoResize();
 
-    this.dom.center.addEventListener('dragover', handleDragOver.bind(this), false);
-    this.dom.center.addEventListener('drop', handleDrop.bind(this), false);
-
-    this.customTimes = [];
-
-    // store state information needed for touch events
-    this.touch = {};
-
-    this.redrawCount = 0;
-    this.initialDrawDone = false;
-    this.initialRangeChangeDone = false;
-
-    // attach the root panel to the provided container
-    if (!container) throw new Error('No container provided');
-    container.appendChild(this.dom.root);
-    container.appendChild(this.dom.loadingScreen);
-  }
-
-  /**
-   * Set options. Options will be passed to all components loaded in the Timeline.
-   * @param {Object} [options]
-   *                           {String} orientation
-   *                              Vertical orientation for the Timeline,
-   *                              can be 'bottom' (default) or 'top'.
-   *                           {string | number} width
-   *                              Width for the timeline, a number in pixels or
-   *                              a css string like '1000px' or '75%'. '100%' by default.
-   *                           {string | number} height
-   *                              Fixed height for the Timeline, a number in pixels or
-   *                              a css string like '400px' or '75%'. If undefined,
-   *                              The Timeline will automatically size such that
-   *                              its contents fit.
-   *                           {string | number} minHeight
-   *                              Minimum height for the Timeline, a number in pixels or
-   *                              a css string like '400px' or '75%'.
-   *                           {string | number} maxHeight
-   *                              Maximum height for the Timeline, a number in pixels or
-   *                              a css string like '400px' or '75%'.
-   *                           {number | Date | string} start
-   *                              Start date for the visible window
-   *                           {number | Date | string} end
-   *                              End date for the visible window
-   */
-  setOptions(options) {
-    if (options) {
-      // copy the known options
-      const fields = [
-        'width', 'height', 'minHeight', 'maxHeight', 'autoResize',
-        'start', 'end', 'clickToUse', 'dataAttributes', 'hiddenDates',
-        'locale', 'locales', 'moment', 'preferZoom', 'rtl', 'zoomKey',
-        'horizontalScroll', 'verticalScroll', 'longSelectPressTime'
-      ];
-      util.selectiveExtend(fields, this.options, options);
-      this.dom.rollingModeBtn.style.visibility = 'hidden';
-
-      if (this.options.rtl) {
-        this.dom.container.style.direction = "rtl";
-        this.dom.backgroundVertical.className = 'vis-panel vis-background vis-vertical-rtl';    
-      }
-
-      if (this.options.verticalScroll) {
-        if (this.options.rtl) {
-          this.dom.rightContainer.className = 'vis-panel vis-right vis-vertical-scroll';
-        } else {
-          this.dom.leftContainer.className = 'vis-panel vis-left vis-vertical-scroll';
+        // remove from DOM
+        if (this.dom.root.parentNode) {
+            this.dom.root.parentNode.removeChild(this.dom.root);
         }
-      }
+        this.dom = null;
 
-      if (typeof this.options.orientation !== 'object') {
-        this.options.orientation = {item:undefined,axis:undefined};
-      }
-      if ('orientation' in options) {
-        if (typeof options.orientation === 'string') {
-          this.options.orientation = {
-            item: options.orientation,
-            axis: options.orientation
-          };
-        }
-        else if (typeof options.orientation === 'object') {
-          if ('item' in options.orientation) {
-            this.options.orientation.item = options.orientation.item;
-          }
-          if ('axis' in options.orientation) {
-            this.options.orientation.axis = options.orientation.axis;
-          }
-        }
-      }
-
-      if (this.options.orientation.axis === 'both') {
-        if (!this.timeAxis2) {
-          const timeAxis2 = this.timeAxis2 = new TimeAxis(this.body);
-          timeAxis2.setOptions = options => {
-            const _options = options ? util.extend({}, options) : {};
-            _options.orientation = 'top'; // override the orientation option, always top
-            TimeAxis.prototype.setOptions.call(timeAxis2, _options);
-          };
-          this.components.push(timeAxis2);
-        }
-      }
-      else {
-        if (this.timeAxis2) {
-          const index = this.components.indexOf(this.timeAxis2);
-          if (index !== -1) {
-            this.components.splice(index, 1);
-          }
-          this.timeAxis2.destroy();
-          this.timeAxis2 = null;
-        }
-      }
-
-      // if the graph2d's drawPoints is a function delegate the callback to the onRender property
-      if (typeof options.drawPoints == 'function') {
-        options.drawPoints = {
-            onRender: options.drawPoints
-        };
-      }
-
-      if ('hiddenDates' in this.options) {
-        convertHiddenOptions(this.options.moment, this.body, this.options.hiddenDates);
-      }
-
-      if ('clickToUse' in options) {
-        if (options.clickToUse) {
-          if (!this.activator) {
-            this.activator = new Activator(this.dom.root);
-          }
-        }
-        else {
-          if (this.activator) {
+        // remove Activator
+        if (this.activator) {
             this.activator.destroy();
             delete this.activator;
-          }
         }
-      }
 
-      // enable/disable autoResize
-      this._initAutoResize();
-    }
-
-    // propagate options to all components
-    this.components.forEach(component => component.setOptions(options));
-
-    // enable/disable configure
-    if ('configure' in options) {
-      if (!this.configurator) {
-        this.configurator = this._createConfigurator();
-      }
-
-      this.configurator.setOptions(options.configure);
-
-      // collect the settings of all components, and pass them to the configuration system
-      const appliedOptions = util.deepExtend({}, this.options);
-      this.components.forEach(component => {
-        util.deepExtend(appliedOptions, component.options);
-      });
-      this.configurator.setModuleOptions({global: appliedOptions});
-    }
-
-    this._redraw();
-  }
-
-  /**
-   * Returns true when the Timeline is active.
-   * @returns {boolean}
-   */
-  isActive() {
-    return !this.activator || this.activator.active;
-  }
-
-  /**
-   * Destroy the Core, clean up all DOM elements and event listeners.
-   */
-  destroy() {
-    // unbind datasets
-    this.setItems(null);
-    this.setGroups(null);
-
-    // remove all event listeners
-    this.off();
-
-    // stop checking for changed size
-    this._stopAutoResize();
-
-    // remove from DOM
-    if (this.dom.root.parentNode) {
-      this.dom.root.parentNode.removeChild(this.dom.root);
-    }
-    this.dom = null;
-
-    // remove Activator
-    if (this.activator) {
-      this.activator.destroy();
-      delete this.activator;
-    }
-
-    // cleanup hammer touch events
-    for (const event in this.timelineListeners) {
-      if (this.timelineListeners.hasOwnProperty(event)) {
-        delete this.timelineListeners[event];
-      }
-    }
-    this.timelineListeners = null;
-    this.hammer && this.hammer.destroy();
-    this.hammer = null;
-
-    // give all components the opportunity to cleanup
-    this.components.forEach(component => component.destroy());
-
-    this.body = null;
-  }
-
-  /**
-   * Set a custom time bar
-   * @param {Date} time
-   * @param {number} [id=undefined] Optional id of the custom time bar to be adjusted.
-   */
-  setCustomTime(time, id) {
-    const customTimes = this.customTimes.filter(component => id === component.options.id);
-
-    if (customTimes.length === 0) {
-      throw new Error(`No custom time bar found with id ${JSON.stringify(id)}`)
-    }
-
-    if (customTimes.length > 0) {
-      customTimes[0].setCustomTime(time);
-    }
-  }
-
-  /**
-   * Retrieve the current custom time.
-   * @param {number} [id=undefined]    Id of the custom time bar.
-   * @return {Date | undefined} customTime
-   */
-  getCustomTime(id) {
-    const customTimes = this.customTimes.filter(component => component.options.id === id);
-
-    if (customTimes.length === 0) {
-      throw new Error(`No custom time bar found with id ${JSON.stringify(id)}`)
-    }
-    return customTimes[0].getCustomTime();
-  }
-
-  /**
-   * Set a custom marker for the custom time bar.
-   * @param {string} [title] Title of the custom marker.
-   * @param {number} [id=undefined] Id of the custom marker.
-   * @param {boolean} [editable=false] Make the custom marker editable.
-   */
-  setCustomTimeMarker(title, id, editable) {
-    const customTimes = this.customTimes.filter(component => component.options.id === id);
-
-    if (customTimes.length === 0) {
-      throw new Error(`No custom time bar found with id ${JSON.stringify(id)}`)
-    }
-    if (customTimes.length > 0) {
-      customTimes[0].setCustomMarker(title, editable);
-    }
-  }
-
-  /**
-   * Set a custom title for the custom time bar.
-   * @param {string} [title] Custom title
-   * @param {number} [id=undefined]    Id of the custom time bar.
-   * @returns {*}
-   */
-  setCustomTimeTitle(title, id) {
-    const customTimes = this.customTimes.filter(component => component.options.id === id);
-
-    if (customTimes.length === 0) {
-      throw new Error(`No custom time bar found with id ${JSON.stringify(id)}`)
-    }
-    if (customTimes.length > 0) {
-      return customTimes[0].setCustomTitle(title);
-    }
-  }
-
-  /**
-   * Retrieve meta information from an event.
-   * Should be overridden by classes extending Core
-   * @param {Event} event
-   * @return {Object} An object with related information.
-   */
-  getEventProperties(event) {
-    return { event };
-  }
-
-  /**
-   * Add custom vertical bar
-   * @param {Date | string | number} [time]  A Date, unix timestamp, or
-   *                                         ISO date string. Time point where
-   *                                         the new bar should be placed.
-   *                                         If not provided, `new Date()` will
-   *                                         be used.
-   * @param {number | string} [id=undefined] Id of the new bar. Optional
-   * @return {number | string}               Returns the id of the new bar
-   */
-  addCustomTime(time, id) {
-    const timestamp = time !== undefined
-        ? util.convert(time, 'Date')
-        : new Date();
-
-    const exists = this.customTimes.some(customTime => customTime.options.id === id);
-    if (exists) {
-      throw new Error(`A custom time with id ${JSON.stringify(id)} already exists`);
-    }
-
-    const customTime = new CustomTime(this.body, util.extend({}, this.options, {
-      time : timestamp,
-      id,
-      snap: this.itemSet.options.snap
-    }));
-
-    this.customTimes.push(customTime);
-    this.components.push(customTime);
-    this._redraw();
-
-    return id;
-  }
-
-  /**
-   * Remove previously added custom bar
-   * @param {int} id ID of the custom bar to be removed
-   * [at]returns {boolean} True if the bar exists and is removed, false otherwise
-   */
-  removeCustomTime(id) {
-    const customTimes = this.customTimes.filter(bar => bar.options.id === id);
-
-    if (customTimes.length === 0) {
-      throw new Error(`No custom time bar found with id ${JSON.stringify(id)}`)
-    }
-
-    customTimes.forEach(customTime => {
-      this.customTimes.splice(this.customTimes.indexOf(customTime), 1);
-      this.components.splice(this.components.indexOf(customTime), 1);
-      customTime.destroy();
-    });
-  }
-
-  /**
-   * Get the id's of the currently visible items.
-   * @returns {Array} The ids of the visible items
-   */
-  getVisibleItems() {
-    return this.itemSet && this.itemSet.getVisibleItems() || [];
-  }
-
-  /**
-   * Get the id's of the currently visible groups.
-   * @returns {Array} The ids of the visible groups
-   */
-  getVisibleGroups() {
-    return this.itemSet && this.itemSet.getVisibleGroups() || [];
-  }
-
-  /**
-   * Set Core window such that it fits all items
-   * @param {Object} [options]  Available options:
-   *                                `animation: boolean | {duration: number, easingFunction: string}`
-   *                                    If true (default), the range is animated
-   *                                    smoothly to the new window. An object can be
-   *                                    provided to specify duration and easing function.
-   *                                    Default duration is 500 ms, and default easing
-   *                                    function is 'easeInOutQuad'.
-   * @param {function} [callback] a callback funtion to be executed at the end of this function
-   */
-  fit(options, callback) {
-    const range = this.getDataRange();
-
-    // skip range set if there is no min and max date
-    if (range.min === null && range.max === null) {
-      return;
-    }
-
-    // apply a margin of 1% left and right of the data
-    const interval = range.max - range.min;
-    const min = new Date(range.min.valueOf() - interval * 0.01);
-    const max = new Date(range.max.valueOf() + interval * 0.01);
-    const animation = (options && options.animation !== undefined) ? options.animation : true;
-    this.range.setRange(min, max, { animation }, callback);
-  }
-
-  /**
-   * Calculate the data range of the items start and end dates
-   * [at]returns {{min: [Date], max: [Date]}}
-   * @protected
-   */
-  getDataRange() {
-    // must be implemented by Timeline and Graph2d
-    throw new Error('Cannot invoke abstract method getDataRange');
-  }
-
-  /**
-   * Set the visible window. Both parameters are optional, you can change only
-   * start or only end. Syntax:
-   *
-   *     TimeLine.setWindow(start, end)
-   *     TimeLine.setWindow(start, end, options)
-   *     TimeLine.setWindow(range)
-   *
-   * Where start and end can be a Date, number, or string, and range is an
-   * object with properties start and end.
-   *
-   * @param {Date | number | string | Object} [start] Start date of visible window
-   * @param {Date | number | string} [end]            End date of visible window
-   * @param {Object} [options]  Available options:
-   *                                `animation: boolean | {duration: number, easingFunction: string}`
-   *                                    If true (default), the range is animated
-   *                                    smoothly to the new window. An object can be
-   *                                    provided to specify duration and easing function.
-   *                                    Default duration is 500 ms, and default easing
-   *                                    function is 'easeInOutQuad'.
-   * @param {function} [callback] a callback funtion to be executed at the end of this function
-   */
-  setWindow(start, end, options, callback) {
-    if (typeof arguments[2] == "function") {
-      callback = arguments[2];
-      options = {};
-    }
-    let animation;
-    let range;
-    if (arguments.length == 1) {
-      range = arguments[0];
-      animation = (range.animation !== undefined) ? range.animation : true;
-      this.range.setRange(range.start, range.end, { animation });
-    }
-    else if (arguments.length == 2 && typeof arguments[1] == "function") {
-      range = arguments[0];
-      callback = arguments[1];
-      animation = (range.animation !== undefined) ? range.animation : true;
-      this.range.setRange(range.start, range.end, { animation }, callback);
-    }
-    else {
-      animation = (options && options.animation !== undefined) ? options.animation : true;
-      this.range.setRange(start, end, { animation }, callback);
-    }
-  }
-
-  /**
-   * Move the window such that given time is centered on screen.
-   * @param {Date | number | string} time
-   * @param {boolean} byUser Is event made by user (default false)
-   * @param {Object} [options]  Available options:
-   *                                `animation: boolean | {duration: number, easingFunction: string}`
-   *                                    If true (default), the range is animated
-   *                                    smoothly to the new window. An object can be
-   *                                    provided to specify duration and easing function.
-   *                                    Default duration is 500 ms, and default easing
-   *                                    function is 'easeInOutQuad'.
-   * @param {function} [callback] a callback funtion to be executed at the end of this function
-   */
-  moveTo(time, byUser, options, callback) {
-    if (typeof arguments[1] == "function") {
-      callback = arguments[1];
-      options = {};
-    }
-    const interval = this.range.end - this.range.start;
-    const t = util.convert(time, 'Date').valueOf();
-
-    const start = t - interval / 2;
-    const end = t + interval / 2;
-    const animation = (options && options.animation !== undefined) ? options.animation : true;
-    const eventByUser = (byUser !== undefined) ? byUser : false;
-
-    this.range.setRange(start, end, { animation: animation, byUser: eventByUser }, callback);
-  }
-
-  /**
-   * Get the visible window
-   * @return {{start: Date, end: Date}}   Visible range
-   */
-  getWindow() {
-    const range = this.range.getRange();
-    return {
-      start: new Date(range.start),
-      end: new Date(range.end)
-    };
-  }
-
-  /**
-   * Zoom in the window such that given time is centered on screen.
-   * @param {number} percentage - must be between [0..1]
-   * @param {Object} [options]  Available options:
-   *                                `animation: boolean | {duration: number, easingFunction: string}`
-   *                                    If true (default), the range is animated
-   *                                    smoothly to the new window. An object can be
-   *                                    provided to specify duration and easing function.
-   *                                    Default duration is 500 ms, and default easing
-   *                                    function is 'easeInOutQuad'.
-   * @param {function} [callback] a callback funtion to be executed at the end of this function
-   */
-  zoomIn(percentage, options, callback) {
-    if (!percentage || percentage < 0 || percentage > 1) return;
-    if (typeof arguments[1] == "function") {
-      callback = arguments[1];
-      options = {};
-    }
-    const range = this.getWindow();
-    const start = range.start.valueOf();
-    const end = range.end.valueOf();
-    const interval = end - start;
-    const newInterval = interval / (1 + percentage);
-    const distance = (interval - newInterval) / 2;
-    const newStart = start + distance;
-    const newEnd = end - distance;
-
-    this.setWindow(newStart, newEnd, options, callback);
-  }
-
-  /**
-   * Zoom out the window such that given time is centered on screen.
-   * @param {number} percentage - must be between [0..1]
-   * @param {Object} [options]  Available options:
-   *                                `animation: boolean | {duration: number, easingFunction: string}`
-   *                                    If true (default), the range is animated
-   *                                    smoothly to the new window. An object can be
-   *                                    provided to specify duration and easing function.
-   *                                    Default duration is 500 ms, and default easing
-   *                                    function is 'easeInOutQuad'.
-   * @param {function} [callback] a callback funtion to be executed at the end of this function
-   */
-  zoomOut(percentage, options, callback) {
-    if (!percentage || percentage < 0 || percentage > 1) return
-    if (typeof arguments[1] == "function") {
-      callback = arguments[1];
-      options = {};
-    }
-    const range = this.getWindow();
-    const start = range.start.valueOf();
-    const end = range.end.valueOf();
-    const interval = end - start;
-    const newStart = start - interval * percentage / 2;
-    const newEnd = end + interval * percentage / 2;
-
-    this.setWindow(newStart, newEnd, options, callback);
-  }
-
-  /**
-   * Force a redraw. Can be overridden by implementations of Core
-   *
-   * Note: this function will be overridden on construction with a trottled version
-   */
-  redraw() {
-    this._redraw();
-  }
-
-  /**
-   * Redraw for internal use. Redraws all components. See also the public
-   * method redraw.
-   * @protected
-   */
-  _redraw() {
-    this.redrawCount++;
-    const dom = this.dom;
-    
-    if (!dom || !dom.container || dom.root.offsetWidth == 0) return; // when destroyed, or invisible
-    
-    let resized = false;
-    const options = this.options;
-    const props = this.props;
-
-    updateHiddenDates(this.options.moment, this.body, this.options.hiddenDates);
-
-    // update class names
-    if (options.orientation == 'top') {
-      util.addClassName(dom.root, 'vis-top');
-      util.removeClassName(dom.root, 'vis-bottom');
-    }
-    else {
-      util.removeClassName(dom.root, 'vis-top');
-      util.addClassName(dom.root, 'vis-bottom');
-    }
-
-    if (options.rtl) {
-      util.addClassName(dom.root, 'vis-rtl');
-      util.removeClassName(dom.root, 'vis-ltr');
-    } else {
-      util.addClassName(dom.root, 'vis-ltr');
-      util.removeClassName(dom.root, 'vis-rtl');
-    }
-
-    // update root width and height options
-    dom.root.style.maxHeight = util.option.asSize(options.maxHeight, '');
-    dom.root.style.minHeight = util.option.asSize(options.minHeight, '');
-    dom.root.style.width = util.option.asSize(options.width, '');
-    const rootOffsetWidth = dom.root.offsetWidth;
-
-    // calculate border widths
-    props.border.left = 1;
-    props.border.right = 1;
-    props.border.top = 1;
-    props.border.bottom = 1;
-
-    // calculate the heights. If any of the side panels is empty, we set the height to
-    // minus the border width, such that the border will be invisible
-    props.center.height = dom.center.offsetHeight;
-    props.left.height   = dom.left.offsetHeight;
-    props.right.height  = dom.right.offsetHeight;
-    props.top.height    = dom.top.clientHeight    || -props.border.top;
-    props.bottom.height = dom.bottom.clientHeight || -props.border.bottom;
-
-    // TODO: compensate borders when any of the panels is empty.
-
-    // apply auto height
-    // TODO: only calculate autoHeight when needed (else we cause an extra reflow/repaint of the DOM)
-    const contentHeight = Math.max(props.left.height, props.center.height, props.right.height);
-    const autoHeight = props.top.height + contentHeight + props.bottom.height + props.border.top + props.border.bottom;
-    dom.root.style.height = util.option.asSize(options.height, `${autoHeight}px`);
-
-    // calculate heights of the content panels
-    props.root.height = dom.root.offsetHeight;
-    props.background.height = props.root.height;
-    const containerHeight = props.root.height - props.top.height - props.bottom.height;
-    props.centerContainer.height  = containerHeight;
-    props.leftContainer.height    = containerHeight;
-    props.rightContainer.height   = props.leftContainer.height;
-
-    // calculate the widths of the panels
-    props.root.width = rootOffsetWidth;
-    props.background.width = props.root.width;
-
-    if (!this.initialDrawDone) {
-      props.scrollbarWidth = util.getScrollBarWidth();
-    }
-
-    const leftContainerClientWidth = dom.leftContainer.clientWidth;
-    const rightContainerClientWidth = dom.rightContainer.clientWidth;
-
-    if (options.verticalScroll) {
-      if (options.rtl) {
-        props.left.width = leftContainerClientWidth || -props.border.left;
-        props.right.width = rightContainerClientWidth + props.scrollbarWidth || -props.border.right;
-      } else {
-        props.left.width = leftContainerClientWidth + props.scrollbarWidth || -props.border.left;
-        props.right.width = rightContainerClientWidth || -props.border.right;
-      }
-    } else {
-      props.left.width = leftContainerClientWidth  || -props.border.left;
-      props.right.width = rightContainerClientWidth || -props.border.right;
-    }
-
-    this._setDOM();
-
-    // update the scrollTop, feasible range for the offset can be changed
-    // when the height of the Core or of the contents of the center changed
-    let offset = this._updateScrollTop();
-
-    // reposition the scrollable contents
-    if (options.orientation.item != 'top') {
-      offset += Math.max(props.centerContainer.height - props.center.height -
-        props.border.top - props.border.bottom, 0);
-    }
-    dom.center.style.transform  = `translateY(${offset}px)`;
-
-    // show shadows when vertical scrolling is available
-    const visibilityTop = props.scrollTop == 0 ? 'hidden' : '';
-    const visibilityBottom = props.scrollTop == props.scrollTopMin ? 'hidden' : '';
-    dom.shadowTop.style.visibility          = visibilityTop;
-    dom.shadowBottom.style.visibility       = visibilityBottom;
-    dom.shadowTopLeft.style.visibility      = visibilityTop;
-    dom.shadowBottomLeft.style.visibility   = visibilityBottom;
-    dom.shadowTopRight.style.visibility     = visibilityTop;
-    dom.shadowBottomRight.style.visibility  = visibilityBottom;
-
-    if (options.verticalScroll) {
-      dom.rightContainer.className = 'vis-panel vis-right vis-vertical-scroll';
-      dom.leftContainer.className = 'vis-panel vis-left vis-vertical-scroll';
-
-      dom.shadowTopRight.style.visibility     = "hidden";
-      dom.shadowBottomRight.style.visibility  = "hidden";
-      dom.shadowTopLeft.style.visibility      = "hidden";
-      dom.shadowBottomLeft.style.visibility   = "hidden";
-
-      dom.left.style.top    = '0px';
-      dom.right.style.top   = '0px';
-    }
-
-    if (!options.verticalScroll ||  props.center.height < props.centerContainer.height) {
-      dom.left.style.top    = `${offset}px`;
-      dom.right.style.top   = `${offset}px`;
-      dom.rightContainer.className = dom.rightContainer.className.replace(new RegExp('(?:^|\\s)'+ 'vis-vertical-scroll' + '(?:\\s|$)'), ' ');
-      dom.leftContainer.className = dom.leftContainer.className.replace(new RegExp('(?:^|\\s)'+ 'vis-vertical-scroll' + '(?:\\s|$)'), ' ');
-      props.left.width = leftContainerClientWidth  || -props.border.left;
-      props.right.width = rightContainerClientWidth || -props.border.right;
-      this._setDOM();
-    }
-
-    // enable/disable vertical panning
-    const contentsOverflow = props.center.height > props.centerContainer.height;
-    this.hammer.get('pan').set({
-      direction: contentsOverflow ? Hammer.DIRECTION_ALL : Hammer.DIRECTION_HORIZONTAL
-    });
-
-    // set the long press time
-    this.hammer.get('press').set({
-      time: this.options.longSelectPressTime
-    });
-
-    // redraw all components
-    this.components.forEach(component => {
-      resized = component.redraw() || resized;
-    });
-    const MAX_REDRAW = 5;
-    if (resized) {
-      if (this.redrawCount < MAX_REDRAW) {
-        this.body.emitter.emit('_change');
-        return;
-      }
-      else {
-        console.log('WARNING: infinite loop in redraw?');
-      }
-    } else {
-      this.redrawCount = 0;
-    }
-
-    //Emit public 'changed' event for UI updates, see issue #1592
-    this.body.emitter.emit("changed");
-  }
-
-  /**
-   * sets the basic DOM components needed for the timeline\graph2d
-   */
-  _setDOM() {
-    const props = this.props;
-    const dom = this.dom;
-
-    props.leftContainer.width = props.left.width;
-    props.rightContainer.width = props.right.width;
-    const centerWidth = props.root.width - props.left.width - props.right.width;
-    props.center.width          = centerWidth;
-    props.centerContainer.width = centerWidth;
-    props.top.width             = centerWidth;
-    props.bottom.width          = centerWidth;
-
-    // resize the panels
-    dom.background.style.height           = `${props.background.height}px`;
-    dom.backgroundVertical.style.height   = `${props.background.height}px`;
-    dom.backgroundHorizontal.style.height = `${props.centerContainer.height}px`;
-    dom.centerContainer.style.height      = `${props.centerContainer.height}px`;
-    dom.leftContainer.style.height        = `${props.leftContainer.height}px`;
-    dom.rightContainer.style.height       = `${props.rightContainer.height}px`;
-
-    dom.background.style.width            = `${props.background.width}px`;
-    dom.backgroundVertical.style.width    = `${props.centerContainer.width}px`;
-    dom.backgroundHorizontal.style.width  = `${props.background.width}px`;
-    dom.centerContainer.style.width       = `${props.center.width}px`;
-    dom.top.style.width                   = `${props.top.width}px`;
-    dom.bottom.style.width                = `${props.bottom.width}px`;
-
-    // reposition the panels
-    dom.background.style.left           = '0';
-    dom.background.style.top            = '0';
-    dom.backgroundVertical.style.left   = `${props.left.width + props.border.left}px`;
-    dom.backgroundVertical.style.top    = '0';
-    dom.backgroundHorizontal.style.left = '0';
-    dom.backgroundHorizontal.style.top  = `${props.top.height}px`;
-    dom.centerContainer.style.left      = `${props.left.width}px`;
-    dom.centerContainer.style.top       = `${props.top.height}px`;
-    dom.leftContainer.style.left        = '0';
-    dom.leftContainer.style.top         = `${props.top.height}px`;
-    dom.rightContainer.style.left       = `${props.left.width + props.center.width}px`;
-    dom.rightContainer.style.top        = `${props.top.height}px`;
-    dom.top.style.left                  = `${props.left.width}px`;
-    dom.top.style.top                   = '0';
-    dom.bottom.style.left               = `${props.left.width}px`;
-    dom.bottom.style.top                = `${props.top.height + props.centerContainer.height}px`;
-    dom.center.style.left               = '0';
-    dom.left.style.left                 = '0';
-    dom.right.style.left                = '0';
-  }
-
-  /**
-   * Set a current time. This can be used for example to ensure that a client's
-   * time is synchronized with a shared server time.
-   * Only applicable when option `showCurrentTime` is true.
-   * @param {Date | string | number} time     A Date, unix timestamp, or
-   *                                          ISO date string.
-   */
-  setCurrentTime(time) {
-    if (!this.currentTime) {
-      throw new Error('Option showCurrentTime must be true');
-    }
-
-    this.currentTime.setCurrentTime(time);
-  }
-
-  /**
-   * Get the current time.
-   * Only applicable when option `showCurrentTime` is true.
-   * @return {Date} Returns the current time.
-   */
-  getCurrentTime() {
-    if (!this.currentTime) {
-      throw new Error('Option showCurrentTime must be true');
-    }
-
-    return this.currentTime.getCurrentTime();
-  }
-
-  /**
-   * Convert a position on screen (pixels) to a datetime
-   * @param {int}     x    Position on the screen in pixels
-   * @return {Date}   time The datetime the corresponds with given position x
-   * @protected
-   * TODO: move this function to Range
-   */
-  _toTime(x) {
-    return toTime(this, x, this.props.center.width);
-  }
-
-  /**
-   * Convert a position on the global screen (pixels) to a datetime
-   * @param {int}     x    Position on the screen in pixels
-   * @return {Date}   time The datetime the corresponds with given position x
-   * @protected
-   * TODO: move this function to Range
-   */
-  _toGlobalTime(x) {
-    return toTime(this, x, this.props.root.width);
-    //var conversion = this.range.conversion(this.props.root.width);
-    //return new Date(x / conversion.scale + conversion.offset);
-  }
-
-  /**
-   * Convert a datetime (Date object) into a position on the screen
-   * @param {Date}   time A date
-   * @return {int}   x    The position on the screen in pixels which corresponds
-   *                      with the given date.
-   * @protected
-   * TODO: move this function to Range
-   */
-  _toScreen(time) {
-    return toScreen(this, time, this.props.center.width);
-  }
-
-  /**
-   * Convert a datetime (Date object) into a position on the root
-   * This is used to get the pixel density estimate for the screen, not the center panel
-   * @param {Date}   time A date
-   * @return {int}   x    The position on root in pixels which corresponds
-   *                      with the given date.
-   * @protected
-   * TODO: move this function to Range
-   */
-  _toGlobalScreen(time) {
-    return toScreen(this, time, this.props.root.width);
-    //var conversion = this.range.conversion(this.props.root.width);
-    //return (time.valueOf() - conversion.offset) * conversion.scale;
-  }
-
-  /**
-   * Initialize watching when option autoResize is true
-   * @private
-   */
-  _initAutoResize() {
-    if (this.options.autoResize == true) {
-      this._startAutoResize();
-    }
-    else {
-      this._stopAutoResize();
-    }
-  }
-
-  /**
-   * Watch for changes in the size of the container. On resize, the Panel will
-   * automatically redraw itself.
-   * @private
-   */
-  _startAutoResize() {
-    const me = this;
-
-    this._stopAutoResize();
-
-    this._onResize = () => {
-      if (me.options.autoResize != true) {
-        // stop watching when the option autoResize is changed to false
-        me._stopAutoResize();
-        return;
-      }
-
-      if (me.dom.root) {
-        const rootOffsetHeight = me.dom.root.offsetHeight;
-        const rootOffsetWidth = me.dom.root.offsetWidth;
-        // check whether the frame is resized
-        // Note: we compare offsetWidth here, not clientWidth. For some reason,
-        // IE does not restore the clientWidth from 0 to the actual width after
-        // changing the timeline's container display style from none to visible
-        if ((rootOffsetWidth != me.props.lastWidth) ||
-          (rootOffsetHeight != me.props.lastHeight)) {
-          me.props.lastWidth = rootOffsetWidth;
-          me.props.lastHeight = rootOffsetHeight;
-          me.props.scrollbarWidth = util.getScrollBarWidth();
-
-          me.body.emitter.emit('_change');
+        // cleanup hammer touch events
+        for (const event in this.timelineListeners) {
+            if (this.timelineListeners.hasOwnProperty(event)) {
+                delete this.timelineListeners[event];
+            }
         }
-      }
-    };
+        this.timelineListeners = null;
+        this.hammer && this.hammer.destroy();
+        this.hammer = null;
 
-    // add event listener to window resize
-    util.addEventListener(window, 'resize', this._onResize);
+        // give all components the opportunity to cleanup
+        this.components.forEach(component => component.destroy());
 
-    //Prevent initial unnecessary redraw
-    if (me.dom.root) {
-        me.props.lastWidth = me.dom.root.offsetWidth;
-        me.props.lastHeight = me.dom.root.offsetHeight;
+        this.body = null;
     }
 
-    this.watchTimer = setInterval(this._onResize, 1000);
-  }
+    /**
+     * Set a custom time bar
+     * @param {Date} time
+     * @param {number} [id=undefined] Optional id of the custom time bar to be adjusted.
+     */
+    setCustomTime(time, id) {
+        const customTimes = this.customTimes.filter(component => id === component.options.id);
 
-  /**
-   * Stop watching for a resize of the frame.
-   * @private
-   */
-  _stopAutoResize() {
-    if (this.watchTimer) {
-      clearInterval(this.watchTimer);
-      this.watchTimer = undefined;
+        if (customTimes.length === 0) {
+            throw new Error(`No custom time bar found with id ${JSON.stringify(id)}`)
+        }
+
+        if (customTimes.length > 0) {
+            customTimes[0].setCustomTime(time);
+        }
     }
 
-    // remove event listener on window.resize
-    if (this._onResize) {
-      util.removeEventListener(window, 'resize', this._onResize);
-      this._onResize = null;
-    }
-  }
+    /**
+     * Retrieve the current custom time.
+     * @param {number} [id=undefined]    Id of the custom time bar.
+     * @return {Date | undefined} customTime
+     */
+    getCustomTime(id) {
+        const customTimes = this.customTimes.filter(component => component.options.id === id);
 
-  /**
-   * Start moving the timeline vertically
-   * @param {Event} event
-   * @private
-   */
-  _onTouch(event) {  // eslint-disable-line no-unused-vars
-    this.touch.allowDragging = true;
-    this.touch.initialScrollTop = this.props.scrollTop;
-  }
-
-  /**
-   * Start moving the timeline vertically
-   * @param {Event} event
-   * @private
-   */
-  _onPinch(event) {  // eslint-disable-line no-unused-vars
-    this.touch.allowDragging = false;
-  }
-
-  /**
-   * Move the timeline vertically
-   * @param {Event} event
-   * @private
-   */
-  _onDrag(event) {
-    if (!event) return
-    // refuse to drag when we where pinching to prevent the timeline make a jump
-    // when releasing the fingers in opposite order from the touch screen
-    if (!this.touch.allowDragging) return;
-
-    const delta = event.deltaY;
-
-    const oldScrollTop = this._getScrollTop();
-    const newScrollTop = this._setScrollTop(this.touch.initialScrollTop + delta);
-
-    if (this.options.verticalScroll) {
-      this.dom.left.parentNode.scrollTop = -this.props.scrollTop;
-      this.dom.right.parentNode.scrollTop = -this.props.scrollTop;
+        if (customTimes.length === 0) {
+            throw new Error(`No custom time bar found with id ${JSON.stringify(id)}`)
+        }
+        return customTimes[0].getCustomTime();
     }
 
-    if (newScrollTop != oldScrollTop) {
-      this.emit("verticalDrag");
-    }
-  }
+    /**
+     * Set a custom marker for the custom time bar.
+     * @param {string} [title] Title of the custom marker.
+     * @param {number} [id=undefined] Id of the custom marker.
+     * @param {boolean} [editable=false] Make the custom marker editable.
+     */
+    setCustomTimeMarker(title, id, editable) {
+        const customTimes = this.customTimes.filter(component => component.options.id === id);
 
-  /**
-   * Apply a scrollTop
-   * @param {number} scrollTop
-   * @returns {number} scrollTop  Returns the applied scrollTop
-   * @private
-   */
-  _setScrollTop(scrollTop) {
-    this.props.scrollTop = scrollTop;
-    this._updateScrollTop();
-    return this.props.scrollTop;
-  }
-
-  /**
-   * Update the current scrollTop when the height of  the containers has been changed
-   * @returns {number} scrollTop  Returns the applied scrollTop
-   * @private
-   */
-  _updateScrollTop() {
-    // recalculate the scrollTopMin
-    const scrollTopMin = Math.min(this.props.centerContainer.height - this.props.center.height, 0); // is negative or zero
-    if (scrollTopMin != this.props.scrollTopMin) {
-      // in case of bottom orientation, change the scrollTop such that the contents
-      // do not move relative to the time axis at the bottom
-      if (this.options.orientation.item != 'top') {
-        this.props.scrollTop += (scrollTopMin - this.props.scrollTopMin);
-      }
-      this.props.scrollTopMin = scrollTopMin;
+        if (customTimes.length === 0) {
+            throw new Error(`No custom time bar found with id ${JSON.stringify(id)}`)
+        }
+        if (customTimes.length > 0) {
+            customTimes[0].setCustomMarker(title, editable);
+        }
     }
 
-    // limit the scrollTop to the feasible scroll range
-    if (this.props.scrollTop > 0) this.props.scrollTop = 0;
-    if (this.props.scrollTop < scrollTopMin) this.props.scrollTop = scrollTopMin;
+    /**
+     * Set a custom title for the custom time bar.
+     * @param {string} [title] Custom title
+     * @param {number} [id=undefined]    Id of the custom time bar.
+     * @returns {*}
+     */
+    setCustomTimeTitle(title, id) {
+        const customTimes = this.customTimes.filter(component => component.options.id === id);
 
-    if (this.options.verticalScroll) {
-      this.dom.left.parentNode.scrollTop = -this.props.scrollTop;
-      this.dom.right.parentNode.scrollTop = -this.props.scrollTop;
+        if (customTimes.length === 0) {
+            throw new Error(`No custom time bar found with id ${JSON.stringify(id)}`)
+        }
+        if (customTimes.length > 0) {
+            return customTimes[0].setCustomTitle(title);
+        }
     }
-    this._isProgramaticallyScrolled = true;
-    return this.props.scrollTop;
-  }
 
-  /**
-   * Get the current scrollTop
-   * @returns {number} scrollTop
-   * @private
-   */
-  _getScrollTop() {
-    return this.props.scrollTop;
-  }
+    /**
+     * Retrieve meta information from an event.
+     * Should be overridden by classes extending Core
+     * @param {Event} event
+     * @return {Object} An object with related information.
+     */
+    getEventProperties(event) {
+        return {event};
+    }
 
-  /**
-   * Load a configurator
-   * [at]returns {Object}
-   * @private
-   */
-  _createConfigurator() {
-    throw new Error('Cannot invoke abstract method _createConfigurator');
-  }
+    /**
+     * Add custom vertical bar
+     * @param {Date | string | number} [time]  A Date, unix timestamp, or
+     *                                         ISO date string. Time point where
+     *                                         the new bar should be placed.
+     *                                         If not provided, `new Date()` will
+     *                                         be used.
+     * @param {number | string} [id=undefined] Id of the new bar. Optional
+     * @return {number | string}               Returns the id of the new bar
+     */
+    addCustomTime(time, id) {
+        const timestamp = time !== undefined
+            ? availableUtils.convert(time, 'Date')
+            : new Date();
+
+        const exists = this.customTimes.some(customTime => customTime.options.id === id);
+        if (exists) {
+            throw new Error(`A custom time with id ${JSON.stringify(id)} already exists`);
+        }
+
+        const customTime = new CustomTime(this.body, availableUtils.extend({}, this.options, {
+            time: timestamp,
+            id,
+            snap: this.itemSet ? this.itemSet.options.snap : this.options.snap
+        }));
+
+        this.customTimes.push(customTime);
+        this.components.push(customTime);
+        this._redraw();
+
+        return id;
+    }
+
+    /**
+     * Remove previously added custom bar
+     * @param {int} id ID of the custom bar to be removed
+     * [at]returns {boolean} True if the bar exists and is removed, false otherwise
+     */
+    removeCustomTime(id) {
+        const customTimes = this.customTimes.filter(bar => bar.options.id === id);
+
+        if (customTimes.length === 0) {
+            throw new Error(`No custom time bar found with id ${JSON.stringify(id)}`)
+        }
+
+        customTimes.forEach(customTime => {
+            this.customTimes.splice(this.customTimes.indexOf(customTime), 1);
+            this.components.splice(this.components.indexOf(customTime), 1);
+            customTime.destroy();
+        });
+    }
+
+    /**
+     * Get the id's of the currently visible items.
+     * @returns {Array} The ids of the visible items
+     */
+    getVisibleItems() {
+        return this.itemSet && this.itemSet.getVisibleItems() || [];
+    }
+
+    /**
+     * Get the id's of the items at specific time, where a click takes place on the timeline.
+     * @returns {Array} The ids of all items in existence at the time of event.
+     */
+    getItemsAtCurrentTime(timeOfEvent) {
+        this.time = timeOfEvent;
+        return this.itemSet && this.itemSet.getItemsAtCurrentTime(this.time) || [];
+    }
+
+    /**
+     * Get the id's of the currently visible groups.
+     * @returns {Array} The ids of the visible groups
+     */
+    getVisibleGroups() {
+        return this.itemSet && this.itemSet.getVisibleGroups() || [];
+    }
+
+    /**
+     * Set Core window such that it fits all items
+     * @param {Object} [options]  Available options:
+     *                                `animation: boolean | {duration: number, easingFunction: string}`
+     *                                    If true (default), the range is animated
+     *                                    smoothly to the new window. An object can be
+     *                                    provided to specify duration and easing function.
+     *                                    Default duration is 500 ms, and default easing
+     *                                    function is 'easeInOutQuad'.
+     * @param {function} [callback] a callback funtion to be executed at the end of this function
+     */
+    fit(options, callback) {
+        const range = this.getDataRange();
+
+        // skip range set if there is no min and max date
+        if (range.min === null && range.max === null) {
+            return;
+        }
+
+        // apply a margin of 1% left and right of the data
+        const interval = range.max - range.min;
+        const min = new Date(range.min.valueOf() - interval * 0.01);
+        const max = new Date(range.max.valueOf() + interval * 0.01);
+        const animation = (options && options.animation !== undefined) ? options.animation : true;
+        this.range.setRange(min, max, {animation}, callback);
+    }
+
+    /**
+     * Calculate the data range of the items start and end dates
+     * [at]returns {{min: [Date], max: [Date]}}
+     * @protected
+     */
+    getDataRange() {
+        // must be implemented by Timeline and Graph2d
+        throw new Error('Cannot invoke abstract method getDataRange');
+    }
+
+    /**
+     * Set the visible window. Both parameters are optional, you can change only
+     * start or only end. Syntax:
+     *
+     *     TimeLine.setWindow(start, end)
+     *     TimeLine.setWindow(start, end, options)
+     *     TimeLine.setWindow(range)
+     *
+     * Where start and end can be a Date, number, or string, and range is an
+     * object with properties start and end.
+     *
+     * @param {Date | number | string | Object} [start] Start date of visible window
+     * @param {Date | number | string} [end]            End date of visible window
+     * @param {Object} [options]  Available options:
+     *                                `animation: boolean | {duration: number, easingFunction: string}`
+     *                                    If true (default), the range is animated
+     *                                    smoothly to the new window. An object can be
+     *                                    provided to specify duration and easing function.
+     *                                    Default duration is 500 ms, and default easing
+     *                                    function is 'easeInOutQuad'.
+     * @param {function} [callback] a callback funtion to be executed at the end of this function
+     */
+    setWindow(start, end, options, callback) {
+        if (typeof arguments[2] == "function") {
+            callback = arguments[2];
+            options = {};
+        }
+        let animation;
+        let range;
+        if (arguments.length == 1) {
+            range = arguments[0];
+            animation = (range.animation !== undefined) ? range.animation : true;
+            this.range.setRange(range.start, range.end, {animation});
+        } else if (arguments.length == 2 && typeof arguments[1] == "function") {
+            range = arguments[0];
+            callback = arguments[1];
+            animation = (range.animation !== undefined) ? range.animation : true;
+            this.range.setRange(range.start, range.end, {animation}, callback);
+        } else {
+            animation = (options && options.animation !== undefined) ? options.animation : true;
+            this.range.setRange(start, end, {animation}, callback);
+        }
+    }
+
+    /**
+     * Move the window such that given time is centered on screen.
+     * @param {Date | number | string} time
+     * @param {boolean} byUser Is event made by user (default false)
+     * @param {Object} [options]  Available options:
+     *                                `animation: boolean | {duration: number, easingFunction: string}`
+     *                                    If true (default), the range is animated
+     *                                    smoothly to the new window. An object can be
+     *                                    provided to specify duration and easing function.
+     *                                    Default duration is 500 ms, and default easing
+     *                                    function is 'easeInOutQuad'.
+     * @param {function} [callback] a callback funtion to be executed at the end of this function
+     */
+    moveTo(time, byUser, options, callback) {
+        if (typeof arguments[1] == "function") {
+            callback = arguments[1];
+            options = {};
+        }
+        const interval = this.range.end - this.range.start;
+        const t = availableUtils.convert(time, 'Date').valueOf();
+
+        const start = t - interval / 2;
+        const end = t + interval / 2;
+        const animation = (options && options.animation !== undefined) ? options.animation : true;
+        const eventByUser = (byUser !== undefined) ? byUser : false;
+
+        this.range.setRange(start, end, { animation: animation, byUser: eventByUser }, callback);
+    }
+
+    /**
+     * Get the visible window
+     * @return {{start: Date, end: Date}}   Visible range
+     */
+    getWindow() {
+        const range = this.range.getRange();
+        return {
+            start: new Date(range.start),
+            end: new Date(range.end)
+        };
+    }
+
+    /**
+     * Zoom in the window such that given time is centered on screen.
+     * @param {number} percentage - must be between [0..1]
+     * @param {Object} [options]  Available options:
+     *                                `animation: boolean | {duration: number, easingFunction: string}`
+     *                                    If true (default), the range is animated
+     *                                    smoothly to the new window. An object can be
+     *                                    provided to specify duration and easing function.
+     *                                    Default duration is 500 ms, and default easing
+     *                                    function is 'easeInOutQuad'.
+     * @param {function} [callback] a callback funtion to be executed at the end of this function
+     */
+    zoomIn(percentage, options, callback) {
+        if (!percentage || percentage < 0 || percentage > 1) return;
+        if (typeof arguments[1] == "function") {
+            callback = arguments[1];
+            options = {};
+        }
+        const range = this.getWindow();
+        const start = range.start.valueOf();
+        const end = range.end.valueOf();
+        const interval = end - start;
+        const newInterval = interval / (1 + percentage);
+        const distance = (interval - newInterval) / 2;
+        const newStart = start + distance;
+        const newEnd = end - distance;
+
+        this.setWindow(newStart, newEnd, options, callback);
+    }
+
+    /**
+     * Zoom out the window such that given time is centered on screen.
+     * @param {number} percentage - must be between [0..1]
+     * @param {Object} [options]  Available options:
+     *                                `animation: boolean | {duration: number, easingFunction: string}`
+     *                                    If true (default), the range is animated
+     *                                    smoothly to the new window. An object can be
+     *                                    provided to specify duration and easing function.
+     *                                    Default duration is 500 ms, and default easing
+     *                                    function is 'easeInOutQuad'.
+     * @param {function} [callback] a callback funtion to be executed at the end of this function
+     */
+    zoomOut(percentage, options, callback) {
+        if (!percentage || percentage < 0 || percentage > 1) return
+        if (typeof arguments[1] == "function") {
+            callback = arguments[1];
+            options = {};
+        }
+        const range = this.getWindow();
+        const start = range.start.valueOf();
+        const end = range.end.valueOf();
+        const interval = end - start;
+        const newStart = start - interval * percentage / 2;
+        const newEnd = end + interval * percentage / 2;
+
+        this.setWindow(newStart, newEnd, options, callback);
+    }
+
+    /**
+     * Force a redraw. Can be overridden by implementations of Core
+     *
+     * Note: this function will be overridden on construction with a trottled version
+     */
+    redraw() {
+        this._redraw();
+    }
+
+    /**
+     * Redraw for internal use. Redraws all components. See also the public
+     * method redraw.
+     * @protected
+     */
+    _redraw() {
+        this.redrawCount++;
+        const dom = this.dom;
+
+        if (!dom || !dom.container || dom.root.offsetWidth == 0) return; // when destroyed, or invisible
+
+        let resized = false;
+        const options = this.options;
+        const props = this.props;
+
+        updateHiddenDates(this.options.moment, this.body, this.options.hiddenDates);
+
+        // update class names
+        if (options.orientation == 'top') {
+            availableUtils.addClassName(dom.root, 'vis-top');
+            availableUtils.removeClassName(dom.root, 'vis-bottom');
+        } else {
+            availableUtils.removeClassName(dom.root, 'vis-top');
+            availableUtils.addClassName(dom.root, 'vis-bottom');
+        }
+
+        if (options.rtl) {
+            availableUtils.addClassName(dom.root, 'vis-rtl');
+            availableUtils.removeClassName(dom.root, 'vis-ltr');
+        } else {
+            availableUtils.addClassName(dom.root, 'vis-ltr');
+            availableUtils.removeClassName(dom.root, 'vis-rtl');
+        }
+
+        // update root width and height options
+        dom.root.style.maxHeight = availableUtils.option.asSize(options.maxHeight, '');
+        dom.root.style.minHeight = availableUtils.option.asSize(options.minHeight, '');
+        dom.root.style.width = availableUtils.option.asSize(options.width, '');
+        const rootOffsetWidth = dom.root.offsetWidth;
+
+        // calculate border widths
+        props.border.left = 1;
+        props.border.right = 1;
+        props.border.top = 1;
+        props.border.bottom = 1;
+
+        // calculate the heights. If any of the side panels is empty, we set the height to
+        // minus the border width, such that the border will be invisible
+        props.center.height = dom.center.offsetHeight;
+        props.left.height = dom.left.offsetHeight;
+        props.right.height = dom.right.offsetHeight;
+        props.top.height = dom.top.clientHeight || -props.border.top;
+        props.bottom.height = Math.round(dom.bottom.getBoundingClientRect().height) || dom.bottom.clientHeight || -props.border.bottom;
+
+        // TODO: compensate borders when any of the panels is empty.
+
+        // apply auto height
+        // TODO: only calculate autoHeight when needed (else we cause an extra reflow/repaint of the DOM)
+        const contentHeight = Math.max(props.left.height, props.center.height, props.right.height);
+        const autoHeight = props.top.height + contentHeight + props.bottom.height + props.border.top + props.border.bottom;
+        dom.root.style.height = availableUtils.option.asSize(options.height, `${autoHeight}px`);
+
+        // calculate heights of the content panels
+        props.root.height = dom.root.offsetHeight;
+        props.background.height = props.root.height;
+        const containerHeight = props.root.height - props.top.height - props.bottom.height;
+        props.centerContainer.height = containerHeight;
+        props.leftContainer.height = containerHeight;
+        props.rightContainer.height = props.leftContainer.height;
+
+        // calculate the widths of the panels
+        props.root.width = rootOffsetWidth;
+        props.background.width = props.root.width;
+
+        if (!this.initialDrawDone) {
+            props.scrollbarWidth = availableUtils.getScrollBarWidth();
+        }
+
+        const leftContainerClientWidth = dom.leftContainer.clientWidth;
+        const rightContainerClientWidth = dom.rightContainer.clientWidth;
+
+        if (options.verticalScroll) {
+            if (options.rtl) {
+                props.left.width = leftContainerClientWidth || -props.border.left;
+                props.right.width = rightContainerClientWidth + props.scrollbarWidth || -props.border.right;
+            } else {
+                props.left.width = leftContainerClientWidth + props.scrollbarWidth || -props.border.left;
+                props.right.width = rightContainerClientWidth || -props.border.right;
+            }
+        } else {
+            props.left.width = leftContainerClientWidth || -props.border.left;
+            props.right.width = rightContainerClientWidth || -props.border.right;
+        }
+
+        this._setDOM();
+
+        // update the scrollTop, feasible range for the offset can be changed
+        // when the height of the Core or of the contents of the center changed
+        let offset = this._updateScrollTop();
+
+        // reposition the scrollable contents
+        if (options.orientation.item != 'top') {
+            offset += Math.max(props.centerContainer.height - props.center.height -
+                props.border.top - props.border.bottom, 0);
+        }
+        dom.center.style.transform = `translateY(${offset}px)`;
+
+        // show shadows when vertical scrolling is available
+        const visibilityTop = props.scrollTop == 0 ? 'hidden' : '';
+        const visibilityBottom = props.scrollTop == props.scrollTopMin ? 'hidden' : '';
+        dom.shadowTop.style.visibility = visibilityTop;
+        dom.shadowBottom.style.visibility = visibilityBottom;
+        dom.shadowTopLeft.style.visibility = visibilityTop;
+        dom.shadowBottomLeft.style.visibility = visibilityBottom;
+        dom.shadowTopRight.style.visibility = visibilityTop;
+        dom.shadowBottomRight.style.visibility = visibilityBottom;
+
+        if (options.verticalScroll) {
+            dom.rightContainer.className = 'vis-panel vis-right vis-vertical-scroll';
+            dom.leftContainer.className = 'vis-panel vis-left vis-vertical-scroll';
+
+            dom.shadowTopRight.style.visibility = "hidden";
+            dom.shadowBottomRight.style.visibility = "hidden";
+            dom.shadowTopLeft.style.visibility = "hidden";
+            dom.shadowBottomLeft.style.visibility = "hidden";
+
+            dom.left.style.top = '0px';
+            dom.right.style.top = '0px';
+        }
+
+        if (!options.verticalScroll || props.center.height < props.centerContainer.height) {
+            dom.left.style.top = `${offset}px`;
+            dom.right.style.top = `${offset}px`;
+            dom.rightContainer.className = dom.rightContainer.className.replace(new RegExp('(?:^|\\s)' + 'vis-vertical-scroll' + '(?:\\s|$)'), ' ');
+            dom.leftContainer.className = dom.leftContainer.className.replace(new RegExp('(?:^|\\s)' + 'vis-vertical-scroll' + '(?:\\s|$)'), ' ');
+            props.left.width = leftContainerClientWidth || -props.border.left;
+            props.right.width = rightContainerClientWidth || -props.border.right;
+            this._setDOM();
+        }
+
+        // enable/disable vertical panning
+        const contentsOverflow = props.center.height > props.centerContainer.height;
+        this.hammer.get('pan').set({
+            direction: contentsOverflow ? Hammer.DIRECTION_ALL : Hammer.DIRECTION_HORIZONTAL
+        });
+
+        // set the long press time
+        this.hammer.get('press').set({
+            time: this.options.longSelectPressTime
+        });
+
+        // redraw all components
+        this.components.forEach(component => {
+            resized = component.redraw() || resized;
+        });
+        const MAX_REDRAW = 5;
+        if (resized) {
+            if (this.redrawCount < MAX_REDRAW) {
+                this.body.emitter.emit('_change');
+                return;
+            } else {
+                console.log('WARNING: infinite loop in redraw?');
+            }
+        } else {
+            this.redrawCount = 0;
+        }
+
+        //Emit public 'changed' event for UI updates, see issue #1592
+        this.body.emitter.emit("changed");
+    }
+
+    /**
+     * sets the basic DOM components needed for the timeline\graph2d
+     */
+    _setDOM() {
+        const props = this.props;
+        const dom = this.dom;
+
+        props.leftContainer.width = props.left.width;
+        props.rightContainer.width = props.right.width;
+        const centerWidth = props.root.width - props.left.width - props.right.width;
+        props.center.width = centerWidth;
+        props.centerContainer.width = centerWidth;
+        props.top.width = centerWidth;
+        props.bottom.width = centerWidth;
+
+        // resize the panels
+        dom.background.style.height = `${props.background.height}px`;
+        dom.backgroundVertical.style.height = `${props.background.height}px`;
+        dom.backgroundHorizontal.style.height = `${props.centerContainer.height}px`;
+        dom.centerContainer.style.height = `${props.centerContainer.height}px`;
+        dom.leftContainer.style.height = `${props.leftContainer.height}px`;
+        dom.rightContainer.style.height = `${props.rightContainer.height}px`;
+
+        dom.background.style.width = `${props.background.width}px`;
+        dom.backgroundVertical.style.width = `${props.centerContainer.width}px`;
+        dom.backgroundHorizontal.style.width = `${props.background.width}px`;
+        dom.centerContainer.style.width = `${props.center.width}px`;
+        dom.top.style.width = `${props.top.width}px`;
+        dom.bottom.style.width = `${props.bottom.width}px`;
+
+        // reposition the panels
+        dom.background.style.left = '0';
+        dom.background.style.top = '0';
+        dom.backgroundVertical.style.left = `${props.left.width + props.border.left}px`;
+        dom.backgroundVertical.style.top = '0';
+        dom.backgroundHorizontal.style.left = '0';
+        dom.backgroundHorizontal.style.top = `${props.top.height}px`;
+        dom.centerContainer.style.left = `${props.left.width}px`;
+        dom.centerContainer.style.top = `${props.top.height}px`;
+        dom.leftContainer.style.left = '0';
+        dom.leftContainer.style.top = `${props.top.height}px`;
+        dom.rightContainer.style.left = `${props.left.width + props.center.width}px`;
+        dom.rightContainer.style.top = `${props.top.height}px`;
+        dom.top.style.left = `${props.left.width}px`;
+        dom.top.style.top = '0';
+        dom.bottom.style.left = `${props.left.width}px`;
+        dom.bottom.style.top = `${props.top.height + props.centerContainer.height}px`;
+        dom.center.style.left = '0';
+        dom.left.style.left = '0';
+        dom.right.style.left = '0';
+    }
+
+    /**
+     * Set a current time. This can be used for example to ensure that a client's
+     * time is synchronized with a shared server time.
+     * Only applicable when option `showCurrentTime` is true.
+     * @param {Date | string | number} time     A Date, unix timestamp, or
+     *                                          ISO date string.
+     */
+    setCurrentTime(time) {
+        if (!this.currentTime) {
+            throw new Error('Option showCurrentTime must be true');
+        }
+
+        this.currentTime.setCurrentTime(time);
+    }
+
+    /**
+     * Get the current time.
+     * Only applicable when option `showCurrentTime` is true.
+     * @return {Date} Returns the current time.
+     */
+    getCurrentTime() {
+        if (!this.currentTime) {
+            throw new Error('Option showCurrentTime must be true');
+        }
+
+        return this.currentTime.getCurrentTime();
+    }
+
+    /**
+     * Convert a position on screen (pixels) to a datetime
+     * @param {int}     x    Position on the screen in pixels
+     * @return {Date}   time The datetime the corresponds with given position x
+     * @protected
+     * TODO: move this function to Range
+     */
+    _toTime(x) {
+        return toTime(this, x, this.props.center.width);
+    }
+
+    /**
+     * Convert a position on the global screen (pixels) to a datetime
+     * @param {int}     x    Position on the screen in pixels
+     * @return {Date}   time The datetime the corresponds with given position x
+     * @protected
+     * TODO: move this function to Range
+     */
+    _toGlobalTime(x) {
+        return toTime(this, x, this.props.root.width);
+        //var conversion = this.range.conversion(this.props.root.width);
+        //return new Date(x / conversion.scale + conversion.offset);
+    }
+
+    /**
+     * Convert a datetime (Date object) into a position on the screen
+     * @param {Date}   time A date
+     * @return {int}   x    The position on the screen in pixels which corresponds
+     *                      with the given date.
+     * @protected
+     * TODO: move this function to Range
+     */
+    _toScreen(time) {
+        return toScreen(this, time, this.props.center.width);
+    }
+
+    /**
+     * Convert a datetime (Date object) into a position on the root
+     * This is used to get the pixel density estimate for the screen, not the center panel
+     * @param {Date}   time A date
+     * @return {int}   x    The position on root in pixels which corresponds
+     *                      with the given date.
+     * @protected
+     * TODO: move this function to Range
+     */
+    _toGlobalScreen(time) {
+        return toScreen(this, time, this.props.root.width);
+        //var conversion = this.range.conversion(this.props.root.width);
+        //return (time.valueOf() - conversion.offset) * conversion.scale;
+    }
+
+    /**
+     * Initialize watching when option autoResize is true
+     * @private
+     */
+    _initAutoResize() {
+        if (this.options.autoResize == true) {
+            this._startAutoResize();
+        } else {
+            this._stopAutoResize();
+        }
+    }
+
+    /**
+     * Watch for changes in the size of the container. On resize, the Panel will
+     * automatically redraw itself.
+     * @private
+     */
+    _startAutoResize() {
+        const me = this;
+
+        this._stopAutoResize();
+
+        this._onResize = () => {
+            if (me.options.autoResize != true) {
+                // stop watching when the option autoResize is changed to false
+                me._stopAutoResize();
+                return;
+            }
+
+            if (me.dom.root) {
+                const rootOffsetHeight = me.dom.root.offsetHeight;
+                const rootOffsetWidth = me.dom.root.offsetWidth;
+                // check whether the frame is resized
+                // Note: we compare offsetWidth here, not clientWidth. For some reason,
+                // IE does not restore the clientWidth from 0 to the actual width after
+                // changing the timeline's container display style from none to visible
+                if ((rootOffsetWidth != me.props.lastWidth) ||
+                    (rootOffsetHeight != me.props.lastHeight)) {
+                    me.props.lastWidth = rootOffsetWidth;
+                    me.props.lastHeight = rootOffsetHeight;
+                    me.props.scrollbarWidth = availableUtils.getScrollBarWidth();
+
+                    me.body.emitter.emit('_change');
+                }
+            }
+        };
+
+        // add event listener to window resize
+        availableUtils.addEventListener(window, 'resize', this._onResize);
+
+        //Prevent initial unnecessary redraw
+        if (me.dom.root) {
+            me.props.lastWidth = me.dom.root.offsetWidth;
+            me.props.lastHeight = me.dom.root.offsetHeight;
+        }
+
+        this.watchTimer = setInterval(this._onResize, 1000);
+    }
+
+    /**
+     * Stop watching for a resize of the frame.
+     * @private
+     */
+    _stopAutoResize() {
+        if (this.watchTimer) {
+            clearInterval(this.watchTimer);
+            this.watchTimer = undefined;
+        }
+
+        // remove event listener on window.resize
+        if (this._onResize) {
+            availableUtils.removeEventListener(window, 'resize', this._onResize);
+            this._onResize = null;
+        }
+    }
+
+    /**
+     * Start moving the timeline vertically
+     * @param {Event} event
+     * @private
+     */
+    _onTouch(event) {  // eslint-disable-line no-unused-vars
+        this.touch.allowDragging = true;
+        this.touch.initialScrollTop = this.props.scrollTop;
+    }
+
+    /**
+     * Start moving the timeline vertically
+     * @param {Event} event
+     * @private
+     */
+    _onPinch(event) {  // eslint-disable-line no-unused-vars
+        this.touch.allowDragging = false;
+    }
+
+    /**
+     * Move the timeline vertically
+     * @param {Event} event
+     * @private
+     */
+    _onDrag(event) {
+        if (!event) return
+        // refuse to drag when we where pinching to prevent the timeline make a jump
+        // when releasing the fingers in opposite order from the touch screen
+        if (!this.touch.allowDragging) return;
+
+        const delta = event.deltaY;
+
+        const oldScrollTop = this._getScrollTop();
+        const newScrollTop = this._setScrollTop(this.touch.initialScrollTop + delta);
+
+        if (this.options.verticalScroll) {
+            this.dom.left.parentNode.scrollTop = -this.props.scrollTop;
+            this.dom.right.parentNode.scrollTop = -this.props.scrollTop;
+        }
+
+        if (newScrollTop != oldScrollTop) {
+            this.emit("verticalDrag");
+        }
+    }
+
+    /**
+     * Apply a scrollTop
+     * @param {number} scrollTop
+     * @returns {number} scrollTop  Returns the applied scrollTop
+     * @private
+     */
+    _setScrollTop(scrollTop) {
+        this.props.scrollTop = scrollTop;
+        this._updateScrollTop();
+        return this.props.scrollTop;
+    }
+
+    /**
+     * Update the current scrollTop when the height of  the containers has been changed
+     * @returns {number} scrollTop  Returns the applied scrollTop
+     * @private
+     */
+    _updateScrollTop() {
+        // recalculate the scrollTopMin
+        const scrollTopMin = Math.min(this.props.centerContainer.height - this.props.border.top - this.props.border.bottom - this.props.center.height, 0); // is negative or zero
+        if (scrollTopMin != this.props.scrollTopMin) {
+            // in case of bottom orientation, change the scrollTop such that the contents
+            // do not move relative to the time axis at the bottom
+            if (this.options.orientation.item != 'top') {
+                this.props.scrollTop += (scrollTopMin - this.props.scrollTopMin);
+            }
+            this.props.scrollTopMin = scrollTopMin;
+        }
+
+        // limit the scrollTop to the feasible scroll range
+        if (this.props.scrollTop > 0) this.props.scrollTop = 0;
+        if (this.props.scrollTop < scrollTopMin) this.props.scrollTop = scrollTopMin;
+
+        if (this.options.verticalScroll) {
+            this.dom.left.parentNode.scrollTop = -this.props.scrollTop;
+            this.dom.right.parentNode.scrollTop = -this.props.scrollTop;
+        }
+        return this.props.scrollTop;
+    }
+
+    /**
+     * Get the current scrollTop
+     * @returns {number} scrollTop
+     * @private
+     */
+    _getScrollTop() {
+        return this.props.scrollTop;
+    }
+
+    /**
+     * Load a configurator
+     * [at]returns {Object}
+     * @private
+     */
+    _createConfigurator() {
+        throw new Error('Cannot invoke abstract method _createConfigurator');
+    }
 }
 
 // turn Core into an event emitter
@@ -5090,16 +5190,16 @@ class CurrentTime extends Component {
       showCurrentTime: true,
       alignCurrentTime: undefined,
 
-      moment,
+      moment: moment$3,
       locales,
       locale: 'en'
     };
-    this.options = util.extend({}, this.defaultOptions);
+    this.options = availableUtils.extend({}, this.defaultOptions);
     this.setOptions(options);
-    this.options.locales = util.extend({}, locales, this.options.locales);
+    this.options.locales = availableUtils.extend({}, locales, this.options.locales);
     const defaultLocales = this.defaultOptions.locales[this.defaultOptions.locale];
     Object.keys(this.options.locales).forEach(locale => {
-      this.options.locales[locale] = util.extend(
+      this.options.locales[locale] = availableUtils.extend(
         {},
         defaultLocales,
         this.options.locales[locale]
@@ -5144,7 +5244,7 @@ class CurrentTime extends Component {
   setOptions(options) {
     if (options) {
       // copy all options that we know
-      util.selectiveExtend(['rtl', 'showCurrentTime', 'alignCurrentTime', 'moment', 'locale', 'locales'], this.options, options);
+      availableUtils.selectiveExtend(['rtl', 'showCurrentTime', 'alignCurrentTime', 'moment', 'locale', 'locales'], this.options, options);
     }
   }
 
@@ -5247,7 +5347,7 @@ class CurrentTime extends Component {
    *                                          ISO date string.
    */
   setCurrentTime(time) {
-    const t = util.convert(time, 'Date').valueOf();
+    const t = availableUtils.convert(time, 'Date').valueOf();
     const now = Date.now();
     this.offset = t - now;
     this.redraw();
@@ -5302,45 +5402,18 @@ function orderByEnd(items) {
  * @return {boolean} shouldBail
  */
 function stack(items, margin, force, shouldBailItemsRedrawFunction) {
-  if (force) {
-    // reset top position of all items
-    for (var i = 0; i < items.length; i++) {
-      items[i].top = null;
-    }
-  }
+  const stackingResult = performStacking(
+    items,
+    margin.item,
+    false,
+    item => item.stack && (force || item.top === null),
+    item => item.stack,
+    item => margin.axis,
+    shouldBailItemsRedrawFunction
+  );
 
-  // calculate new, non-overlapping positions
-  for (var i = 0; i < items.length; i++) {  // eslint-disable-line no-redeclare
-    const item = items[i];
-    if (item.stack && item.top === null) {
-      // initialize top position
-      item.top = margin.axis;
-      var shouldBail = false;
-
-      do {
-        // TODO: optimize checking for overlap. when there is a gap without items,
-        //       you only need to check for items from the next item on, not from zero
-        var collidingItem = null;
-        for (let j = 0, jj = items.length; j < jj; j++) {
-          const other = items[j];
-          shouldBail = shouldBailItemsRedrawFunction() || false;
-
-          if (shouldBail) { return true; }
-
-          if (other.top !== null && other !== item && other.stack && collision(item, other, margin.item, other.options.rtl)) {
-            collidingItem = other;
-            break;
-          }
-        }
-
-        if (collidingItem != null) {
-          // There is a collision. Reposition the items above the colliding element
-          item.top = collidingItem.top + collidingItem.height + margin.item.vertical;
-        }
-      } while (collidingItem);
-    }
-  }
-  return shouldBail;
+  // If shouldBail function returned true during stacking calculation
+  return stackingResult === null;
 }
 
 /**
@@ -5354,46 +5427,14 @@ function stack(items, margin, force, shouldBailItemsRedrawFunction) {
  *            The subgroup that is being stacked
  */
 function substack(items, margin, subgroup) {
-  for (var i = 0; i < items.length; i++) {
-    items[i].top = null;
-  }
-
-  // Set the initial height
-  let subgroupHeight = subgroup.height;
-
-  // calculate new, non-overlapping positions
-  for (i = 0; i < items.length; i++) {
-    const item = items[i];
-
-    if (item.stack && item.top === null) {
-      // initialize top position
-      item.top = item.baseTop;//margin.axis + item.baseTop;
-
-      do {
-        // TODO: optimize checking for overlap. when there is a gap without items,
-        //       you only need to check for items from the next item on, not from zero
-        var collidingItem = null;
-        for (let j = 0, jj = items.length; j < jj; j++) {
-          const other = items[j];
-          if (other.top !== null && other !== item /*&& other.stack*/ && collision(item, other, margin.item, other.options.rtl)) {
-            collidingItem = other;
-            break;
-          }
-        }
-
-        if (collidingItem != null) {
-          // There is a collision. Reposition the items above the colliding element
-          item.top = collidingItem.top + collidingItem.height + margin.item.vertical;// + item.baseTop;
-        }
-
-        if (item.top + item.height > subgroupHeight) {
-          subgroupHeight = item.top + item.height;
-        }
-      } while (collidingItem);
-    }
-  }
-
-  // Set the new height
+  const subgroupHeight = performStacking(
+    items,
+    margin.item,
+    false,
+    item => item.stack,
+    item => true,
+    item => item.baseTop
+  );
   subgroup.height = subgroupHeight - subgroup.top + 0.5 * margin.item.vertical;
 }
 
@@ -5438,29 +5479,21 @@ function nostack(items, margin, subgroups, isStackSubgroups) {
  *            All subgroups
  */
 function stackSubgroups(items, margin, subgroups) {
-  for (const subgroup in subgroups) {
-    if (subgroups.hasOwnProperty(subgroup)) {
+  performStacking(
+    Object.values(subgroups).sort((a, b) => {
+      if(a.index > b.index) return 1; 
+      if(a.index < b.index) return -1; 
+      return 0; 
+    }),
+    {
+      vertical: 0
+    },
+    true,
+    item => true,
+    item => true,
+    item => 0
+  );
 
-
-      subgroups[subgroup].top = 0;
-      do {
-        // TODO: optimize checking for overlap. when there is a gap without items,
-        //       you only need to check for items from the next item on, not from zero
-        var collidingItem = null;
-        for (const otherSubgroup in subgroups) {
-          if (subgroups[otherSubgroup].top !== null && otherSubgroup !== subgroup && subgroups[subgroup].index > subgroups[otherSubgroup].index && collisionByTimes(subgroups[subgroup], subgroups[otherSubgroup])) {
-            collidingItem = subgroups[otherSubgroup];
-            break;
-          }
-        }
-
-        if (collidingItem != null) {
-          // There is a collision. Reposition the subgroups above the colliding element
-          subgroups[subgroup].top = collidingItem.top + collidingItem.height;
-        }
-      } while (collidingItem);
-    }
-  }
   for (let i = 0; i < items.length; i++) {
     if (items[i].data.subgroup !== undefined) {
       items[i].top = subgroups[items[i].data.subgroup].top + 0.5 * margin.item.vertical;
@@ -5524,66 +5557,237 @@ function stackSubgroupsWithInnerStack(subgroupItems, margin, subgroups) {
   }
 }
 
+
+
+/**
+ * Reusable stacking function
+ * 
+ * @param {Item[]} items 
+ * An array of items to consider during stacking.
+ * @param {{horizontal: number, vertical: number}} margins
+ * Margins to be used for collision checking and placement of items.
+ * @param {boolean} compareTimes
+ * By default, horizontal collision is checked based on the spatial position of the items (left/right and width).
+ * If this argument is true, horizontal collision will instead be checked based on the start/end times of each item.
+ * Vertical collision is always checked spatially.
+ * @param {(Item) => number | null} shouldStack
+ * A callback function which is called before we start to process an item. The return value indicates whether the item will be processed.
+ * @param {(Item) => boolean} shouldOthersStack
+ * A callback function which indicates whether other items should consider this item when being stacked.
+ * @param {(Item) => number} getInitialHeight
+ * A callback function which determines the height items are initially placed at
+ * @param {() => boolean} shouldBail 
+ * A callback function which should indicate if the stacking process should be aborted.
+ * 
+ * @returns {null|number}
+ * if shouldBail was triggered, returns null
+ * otherwise, returns the maximum height
+ */
+function performStacking(items, margins, compareTimes, shouldStack, shouldOthersStack, getInitialHeight, shouldBail) {
+  // Time-based horizontal comparison
+  let getItemStart = item => item.start;
+  let getItemEnd = item => item.end;
+  if(!compareTimes) {
+    // Spatial horizontal comparisons
+    const rtl = !!(items[0] && items[0].options.rtl);
+    if(rtl) {
+      getItemStart = item => item.right;
+    } else {
+      getItemStart = item => item.left;
+    }
+    getItemEnd = item => getItemStart(item) + item.width + margins.horizontal;
+  }
+
+  const itemsToPosition = [];
+  const itemsAlreadyPositioned = []; // It's vital that this array is kept sorted based on the start of each item
+
+  // If the order we needed to place items was based purely on the start of each item, we could calculate stacking very efficiently.
+  // Unfortunately for us, this is not guaranteed. But the order is often based on the start of items at least to some degree, and
+  // we can use this to make some optimisations. While items are proceeding in order of start, we can keep moving our search indexes
+  // forwards. Then if we encounter an item that's out of order, we reset our indexes and search from the beginning of the array again.
+  let previousStart = null;
+  let insertionIndex = 0;
+
+  // First let's handle any immoveable items
+  for(const item of items) {
+    if(shouldStack(item)) {
+      itemsToPosition.push(item);
+    } else {
+      if(shouldOthersStack(item)) {
+        const itemStart = getItemStart(item);
+
+        // We need to put immoveable items into itemsAlreadyPositioned and ensure that this array is sorted.
+        // We could simply insert them, and then use JavaScript's sort function to sort them afterwards.
+        // This would achieve an average complexity of O(n log n).
+        // 
+        // Instead, I'm gambling that the start of each item will usually be the same or later than the
+        // start of the previous item. While this holds (best case), we can insert items in O(n).
+        // In the worst case (where each item starts before the previous item) this grows to O(n^2).
+        // 
+        // I am making the assumption that for most datasets, the "order" function will have relatively low cardinality,
+        // and therefore this tradeoff should be easily worth it.
+        if(previousStart !== null && itemStart < previousStart - EPSILON) {
+          insertionIndex = 0;
+        }
+        previousStart = itemStart;
+
+        insertionIndex = findIndexFrom(itemsAlreadyPositioned, i => getItemStart(i) - EPSILON > itemStart, insertionIndex);
+
+        itemsAlreadyPositioned.splice(insertionIndex, 0, item);
+        insertionIndex++;
+      }
+    }
+  }
+
+  // Now we can loop through each item (in order) and find a position for them
+  previousStart = null;
+  let previousEnd = null;
+  insertionIndex = 0;
+  let horizontalOverlapStartIndex = 0;
+  let horizontalOverlapEndIndex = 0;
+  let maxHeight = 0;
+  while(itemsToPosition.length > 0) {
+    const item = itemsToPosition.shift();
+
+    item.top = getInitialHeight(item);
+
+    const itemStart = getItemStart(item);
+    const itemEnd = getItemEnd(item);
+    if(previousStart !== null && itemStart < previousStart - EPSILON) {
+      horizontalOverlapStartIndex = 0;
+      horizontalOverlapEndIndex = 0;
+      insertionIndex = 0;
+      previousEnd = null;
+    }
+    previousStart = itemStart;
+
+    // Take advantage of the sorted itemsAlreadyPositioned array to narrow down the search
+    horizontalOverlapStartIndex = findIndexFrom(itemsAlreadyPositioned, i => itemStart < getItemEnd(i) - EPSILON, horizontalOverlapStartIndex);
+    // Since items aren't sorted by end time, it might increase or decrease from one item to the next. In order to keep an efficient search area, we will seek forwards/backwards accordingly.
+    if(previousEnd === null || previousEnd < itemEnd - EPSILON) {
+      horizontalOverlapEndIndex = findIndexFrom(itemsAlreadyPositioned, i => itemEnd < getItemStart(i) - EPSILON, Math.max(horizontalOverlapStartIndex, horizontalOverlapEndIndex));
+    }
+    if(previousEnd !== null && previousEnd - EPSILON > itemEnd) {
+      horizontalOverlapEndIndex = findLastIndexBetween(itemsAlreadyPositioned, i => itemEnd + EPSILON >= getItemStart(i), horizontalOverlapStartIndex, horizontalOVerlapEndIndex) + 1;
+    }
+
+    // Sort by vertical position so we don't have to reconsider past items if we move an item
+    const horizontallyCollidingItems = itemsAlreadyPositioned
+      .slice(horizontalOverlapStartIndex, horizontalOverlapEndIndex)
+      .filter(i => itemStart < getItemEnd(i) - EPSILON && itemEnd - EPSILON > getItemStart(i))
+      .sort((a, b) => a.top - b.top);
+
+    // Keep moving the item down until it stops colliding with any other items
+    for(let i2 = 0; i2 < horizontallyCollidingItems.length; i2++) {
+      const otherItem = horizontallyCollidingItems[i2];
+      
+      if(checkVerticalSpatialCollision(item, otherItem, margins)) {
+        item.top = otherItem.top + otherItem.height + margins.vertical;
+      }
+    }
+
+    if(shouldOthersStack(item)) {
+      // Insert the item into itemsAlreadyPositioned, ensuring itemsAlreadyPositioned remains sorted.
+      // In the best case, we can insert an item in constant time O(1). In the worst case, we insert an item in linear time O(n).
+      // In both cases, this is better than doing a naive insert and then sort, which would cost on average O(n log n).
+      insertionIndex = findIndexFrom(itemsAlreadyPositioned, i => getItemStart(i) - EPSILON > itemStart, insertionIndex);
+
+      itemsAlreadyPositioned.splice(insertionIndex, 0, item);
+      insertionIndex++;
+    }
+
+    // Keep track of the tallest item we've seen before
+    const currentHeight = item.top + item.height;
+    if(currentHeight > maxHeight) {
+      maxHeight = currentHeight;
+    }
+
+    if(shouldBail && shouldBail()) { return null; }
+  }
+
+  return maxHeight;
+}
+
 /**
  * Test if the two provided items collide
  * The items must have parameters left, width, top, and height.
  * @param {Item} a          The first item
  * @param {Item} b          The second item
- * @param {{horizontal: number, vertical: number}} margin
+ * @param {{vertical: number}} margin
  *                          An object containing a horizontal and vertical
  *                          minimum required margin.
- * @param {boolean} rtl
  * @return {boolean}        true if a and b collide, else false
  */
-function collision(a, b, margin, rtl) {
-  if (rtl) {
-    return  ((a.right - margin.horizontal + EPSILON)  < (b.right + b.width) &&
-    (a.right + a.width + margin.horizontal - EPSILON) > b.right &&
-    (a.top - margin.vertical + EPSILON)              < (b.top + b.height) &&
-    (a.top + a.height + margin.vertical - EPSILON)   > b.top);
-  } else {
-    return ((a.left - margin.horizontal + EPSILON)   < (b.left + b.width) &&
-    (a.left + a.width + margin.horizontal - EPSILON) > b.left &&
-    (a.top - margin.vertical + EPSILON)              < (b.top + b.height) &&
-    (a.top + a.height + margin.vertical - EPSILON)   > b.top);
+function checkVerticalSpatialCollision(a, b, margin) {
+  return (a.top - margin.vertical + EPSILON) < (b.top + b.height) &&
+  (a.top + a.height + margin.vertical - EPSILON) > b.top;
+}
+
+
+/**
+ * Find index of first item to meet predicate after a certain index.
+ * If no such item is found, returns the length of the array.
+ * 
+ * @param {any[]} arr The array
+ * @param {(item) => boolean} predicate A function that should return true when a suitable item is found
+ * @param {number|undefined} startIndex The index to start search from (inclusive). Optional, if not provided will search from the beginning of the array.
+ * 
+ * @return {number}
+ */
+function findIndexFrom(arr, predicate, startIndex) {
+  if(!startIndex) {
+    startIndex = 0;
   }
+  const matchIndex = arr.slice(startIndex).findIndex(predicate);
+  if(matchIndex === -1) {
+    return arr.length;
+  }
+  return matchIndex + startIndex;
 }
 
 /**
- * Test if the two provided objects collide
- * The objects must have parameters start, end, top, and height.
- * @param {Object} a          The first Object
- * @param {Object} b          The second Object
- * @return {boolean}        true if a and b collide, else false
+ * Find index of last item to meet predicate within a given range.
+ * If no such item is found, returns the index prior to the start of the range.
+ * 
+ * @param {any[]} arr The array
+ * @param {(item) => boolean} predicate A function that should return true when a suitable item is found
+ * @param {number|undefined} startIndex The earliest index to search to (inclusive). Optional, if not provided will continue until the start of the array.
+ * @param {number|undefined} endIndex The end of the search range (exclusive). The search will begin on the index prior to this value. Optional, defaults to the end of array.
+ * 
+ * @return {number}
  */
-function collisionByTimes(a, b) {
-
-  // Check for overlap by time and height. Abutting is OK and
-  // not considered a collision while overlap is considered a collision.
-  const timeOverlap = a.start < b.end && a.end > b.start;
-  const heightOverlap = a.top < (b.top + b.height) && (a.top + a.height) > b.top;
-  return timeOverlap && heightOverlap;
+function findLastIndexBetween(arr, predicate, startIndex, endIndex) {
+  if(!startIndex) {
+    startIndex = 0;
+  }
+  if(!endIndex) {
+    endIndex = arr.length;
+  }
+  for(i = endIndex - 1; i >= startIndex; i--) {
+    if(predicate(arr[i])) {
+      return i;
+    }
+  }
+  return startIndex - 1;
 }
 
 var stack$1 = /*#__PURE__*/Object.freeze({
-  __proto__: null,
-  orderByStart: orderByStart,
-  orderByEnd: orderByEnd,
-  stack: stack,
-  substack: substack,
-  nostack: nostack,
-  stackSubgroups: stackSubgroups,
-  stackSubgroupsWithInnerStack: stackSubgroupsWithInnerStack,
-  collision: collision,
-  collisionByTimes: collisionByTimes
+	__proto__: null,
+	nostack: nostack,
+	orderByEnd: orderByEnd,
+	orderByStart: orderByStart,
+	stack: stack,
+	stackSubgroups: stackSubgroups,
+	stackSubgroupsWithInnerStack: stackSubgroupsWithInnerStack,
+	substack: substack
 });
 
-const UNGROUPED = '__ungrouped__';   // reserved group id for ungrouped items
-const BACKGROUND = '__background__'; // reserved group id for background items without group
+const UNGROUPED$3 = '__ungrouped__';   // reserved group id for ungrouped items
+const BACKGROUND$2 = '__background__'; // reserved group id for background items without group
 
-const ReservedGroupIds = {
-  UNGROUPED,
-  BACKGROUND
+const ReservedGroupIds$1 = {
+  UNGROUPED: UNGROUPED$3,
+  BACKGROUND: BACKGROUND$2
 };
 
 
@@ -5751,18 +5955,18 @@ class Group {
     } else if (content instanceof Object && content.isReactComponent) ; else if (content instanceof Object) {
       templateFunction(data, this.dom.inner);
     } else if (content !== undefined && content !== null) {
-      this.dom.inner.innerHTML = content;
+      this.dom.inner.innerHTML = availableUtils.xss(content);
     } else {
-      this.dom.inner.innerHTML = this.groupId || ''; // groupId can be null
+      this.dom.inner.innerHTML = availableUtils.xss(this.groupId || ''); // groupId can be null
     }
 
     // update title
     this.dom.label.title = data && data.title || '';
     if (!this.dom.inner.firstChild) {
-      util.addClassName(this.dom.inner, 'vis-hidden');
+      availableUtils.addClassName(this.dom.inner, 'vis-hidden');
     }
     else {
-      util.removeClassName(this.dom.inner, 'vis-hidden');
+      availableUtils.removeClassName(this.dom.inner, 'vis-hidden');
     }
 
     if (data && data.nestedGroups) {
@@ -5778,56 +5982,56 @@ class Group {
         }
       }
 
-      util.addClassName(this.dom.label, 'vis-nesting-group');
+      availableUtils.addClassName(this.dom.label, 'vis-nesting-group');
       if (this.showNested) {
-        util.removeClassName(this.dom.label, 'collapsed');
-        util.addClassName(this.dom.label, 'expanded');
+        availableUtils.removeClassName(this.dom.label, 'collapsed');
+        availableUtils.addClassName(this.dom.label, 'expanded');
       } else {
-        util.removeClassName(this.dom.label, 'expanded');
-        util.addClassName(this.dom.label, 'collapsed');
+        availableUtils.removeClassName(this.dom.label, 'expanded');
+        availableUtils.addClassName(this.dom.label, 'collapsed');
       }
     } else if (this.nestedGroups) {
       this.nestedGroups = null;
-      util.removeClassName(this.dom.label, 'collapsed');
-      util.removeClassName(this.dom.label, 'expanded');
-      util.removeClassName(this.dom.label, 'vis-nesting-group');
+      availableUtils.removeClassName(this.dom.label, 'collapsed');
+      availableUtils.removeClassName(this.dom.label, 'expanded');
+      availableUtils.removeClassName(this.dom.label, 'vis-nesting-group');
     }
 
     if (data && (data.treeLevel|| data.nestedInGroup)) {
-      util.addClassName(this.dom.label, 'vis-nested-group');
+      availableUtils.addClassName(this.dom.label, 'vis-nested-group');
       if (data.treeLevel) {
-        util.addClassName(this.dom.label, 'vis-group-level-' + data.treeLevel);
+        availableUtils.addClassName(this.dom.label, 'vis-group-level-' + data.treeLevel);
       } else {
         // Nesting level is unknown, but we're sure it's at least 1
-        util.addClassName(this.dom.label, 'vis-group-level-unknown-but-gte1');
+        availableUtils.addClassName(this.dom.label, 'vis-group-level-unknown-but-gte1');
       }
     } else {
-      util.addClassName(this.dom.label, 'vis-group-level-0');
+      availableUtils.addClassName(this.dom.label, 'vis-group-level-0');
     }
     
     // update className
     const className = data && data.className || null;
     if (className != this.className) {
       if (this.className) {
-        util.removeClassName(this.dom.label, this.className);
-        util.removeClassName(this.dom.foreground, this.className);
-        util.removeClassName(this.dom.background, this.className);
-        util.removeClassName(this.dom.axis, this.className);
+        availableUtils.removeClassName(this.dom.label, this.className);
+        availableUtils.removeClassName(this.dom.foreground, this.className);
+        availableUtils.removeClassName(this.dom.background, this.className);
+        availableUtils.removeClassName(this.dom.axis, this.className);
       }
-      util.addClassName(this.dom.label, className);
-      util.addClassName(this.dom.foreground, className);
-      util.addClassName(this.dom.background, className);
-      util.addClassName(this.dom.axis, className);
+      availableUtils.addClassName(this.dom.label, className);
+      availableUtils.addClassName(this.dom.foreground, className);
+      availableUtils.addClassName(this.dom.background, className);
+      availableUtils.addClassName(this.dom.axis, className);
       this.className = className;
     }
 
     // update style
     if (this.style) {
-      util.removeCssText(this.dom.label, this.style);
+      availableUtils.removeCssText(this.dom.label, this.style);
       this.style = null;
     }
     if (data && data.style) {
-      util.addCssText(this.dom.label, data.style);
+      availableUtils.addCssText(this.dom.label, data.style);
       this.style = data.style;
     }
   }
@@ -5851,7 +6055,7 @@ class Group {
       const redrawQueue = {};
       let redrawQueueLength = 0;
 
-      util.forEach(this.items, (item, key) => {
+      availableUtils.forEach(this.items, (item, key) => {
         item.dirty = true;
         if (item.displayed) {
           const returnQueue = true;
@@ -5864,7 +6068,7 @@ class Group {
       if (needRedraw) {
         // redraw all regular items
         for (let i = 0; i < redrawQueueLength; i++) {
-          util.forEach(redrawQueue, fns => {
+          availableUtils.forEach(redrawQueue, fns => {
             fns[i]();
           });
         }
@@ -6020,7 +6224,7 @@ class Group {
       }
 
       if (this.itemSet.options.cluster) {
-        util.forEach(this.items, item => {
+        availableUtils.forEach(this.items, item => {
           if (item.cluster && item.displayed) {
             item.hide();
           }
@@ -6041,12 +6245,12 @@ class Group {
    * @return {boolean} did resize
    */
   _didResize(resized, height) {
-    resized = util.updateProperty(this, 'height', height) || resized;
+    resized = availableUtils.updateProperty(this, 'height', height) || resized;
     // recalculate size of label
     const labelWidth = this.dom.inner.clientWidth;
     const labelHeight = this.dom.inner.clientHeight;
-    resized = util.updateProperty(this.props.label, 'width', labelWidth) || resized;
-    resized = util.updateProperty(this.props.label, 'height', labelHeight) || resized;
+    resized = availableUtils.updateProperty(this.props.label, 'width', labelWidth) || resized;
+    resized = availableUtils.updateProperty(this.props.label, 'height', labelHeight) || resized;
     return resized;
   }
 
@@ -6068,7 +6272,7 @@ class Group {
     for (let i = 0, ii = this.visibleItems.length; i < ii; i++) {
       const item = this.visibleItems[i];
       item.repositionY(margin);
-      if (!this.isVisible && this.groupId != ReservedGroupIds.BACKGROUND) {
+      if (!this.isVisible && this.groupId != ReservedGroupIds$1.BACKGROUND) {
         if (item.displayed) item.hide();
       }
     }
@@ -6159,7 +6363,7 @@ class Group {
 
       this._resetSubgroups();
 
-      util.forEach(this.visibleItems, item => {
+      availableUtils.forEach(this.visibleItems, item => {
         if (item.data.subgroup !== undefined) {
           me.subgroups[item.data.subgroup].height = Math.max(me.subgroups[item.data.subgroup].height, item.height + margin.item.vertical);
           me.subgroups[item.data.subgroup].visible = typeof this.subgroupVisibility[item.data.subgroup] === 'undefined' ? true : Boolean(this.subgroupVisibility[item.data.subgroup]);
@@ -6194,7 +6398,7 @@ class Group {
     let items;
 
     if (this.heightMode === 'fixed') {
-      items = util.toArray(this.items);
+      items = availableUtils.toArray(this.items);
     } else {
       // default or 'auto'
       items = this.visibleItems;
@@ -6203,7 +6407,7 @@ class Group {
     if (items.length > 0) {
       let min = items[0].top;
       let max = items[0].top + items[0].height;
-      util.forEach(items, item => {
+      availableUtils.forEach(items, item => {
         min = Math.min(min, item.top);
         max = Math.max(max, (item.top + item.height));
       });
@@ -6211,7 +6415,7 @@ class Group {
         // there is an empty gap between the lowest item and the axis
         const offset = min - margin.axis;
         max -= offset;
-        util.forEach(items, item => {
+        availableUtils.forEach(items, item => {
           item.top -= offset;
         });
       }
@@ -6221,7 +6425,7 @@ class Group {
       }
     }
     else {
-      height =  this.props.label.height;
+      height = this.props.label.height;
     }
     return height;
   }
@@ -6447,7 +6651,7 @@ class Group {
    * Reorder the items
    */
   order() {
-    const array = util.toArray(this.items);
+    const array = availableUtils.toArray(this.items);
     const startArray = [];
     const endArray = [];
 
@@ -6478,7 +6682,7 @@ class Group {
     const visibleItems = [];
     const visibleItemsLookup = {}; // we keep this to quickly look up if an item already exists in the list without using indexOf on visibleItems
 
-    if (!this.isVisible && this.groupId != ReservedGroupIds.BACKGROUND) {
+    if (!this.isVisible && this.groupId != ReservedGroupIds$1.BACKGROUND) {
       for (let i = 0; i < oldVisibleItems.length; i++) {
         var item = oldVisibleItems[i];
         if (item.displayed) item.hide();
@@ -6515,7 +6719,7 @@ class Group {
     }
 
     // we do a binary search for the items that have only start values.
-    const initialPosByStart = util.binarySearchCustom(orderedItems.byStart, startSearchFunction, 'data','start');
+    const initialPosByStart = availableUtils.binarySearchCustom(orderedItems.byStart, startSearchFunction, 'data','start');
 
     // trace the visible items from the inital start pos both ways until an invisible item is found, we only look at the start values.
     this._traceVisible(initialPosByStart, orderedItems.byStart, visibleItems, visibleItemsLookup, item => item.data.start < lowerBound || item.data.start > upperBound);
@@ -6530,7 +6734,7 @@ class Group {
     }
     else {
       // we do a binary search for the items that have defined end times.
-      const initialPosByEnd = util.binarySearchCustom(orderedItems.byEnd, endSearchFunction, 'data');
+      const initialPosByEnd = availableUtils.binarySearchCustom(orderedItems.byEnd, endSearchFunction, 'data');
 
       // trace the visible items from the inital start pos both ways until an invisible item is found, we only look at the end values.
       this._traceVisible(initialPosByEnd, orderedItems.byEnd, visibleItems, visibleItemsLookup, item => item.data.end < lowerBound || item.data.start > upperBound);
@@ -6552,7 +6756,7 @@ class Group {
     if (needRedraw) {
       // redraw all regular items
       for (let j = 0; j < redrawQueueLength; j++) {
-        util.forEach(redrawQueue, fns => {
+        availableUtils.forEach(redrawQueue, fns => {
           fns[j]();
         });
       }
@@ -6697,7 +6901,7 @@ class Group {
     if (needRedraw) {
       // redraw all regular items
       for (var j = 0; j < redrawQueueLength; j++) {
-        util.forEach(redrawQueue, function (fns) {
+        availableUtils.forEach(redrawQueue, function (fns) {
           fns[j]();
         });
       }
@@ -6816,11 +7020,11 @@ class Item {
       locales,
       locale: 'en'
     };
-    this.options = util.extend({}, this.defaultOptions, options);
-    this.options.locales = util.extend({}, locales, this.options.locales);
+    this.options = availableUtils.extend({}, this.defaultOptions, options);
+    this.options.locales = availableUtils.extend({}, locales, this.options.locales);
     const defaultLocales = this.defaultOptions.locales[this.defaultOptions.locale];
     Object.keys(this.options.locales).forEach(locale => {
-      this.options.locales[locale] = util.extend(
+      this.options.locales[locale] = availableUtils.extend(
         {},
         defaultLocales,
         this.options.locales[locale]
@@ -7000,6 +7204,8 @@ class Item {
       });
       this.hammerDragCenter.on('panmove',  me.parent.itemSet._onDrag.bind(me.parent.itemSet));
       this.hammerDragCenter.on('panend',   me.parent.itemSet._onDragEnd.bind(me.parent.itemSet));
+      // delay addition on item click for trackpads...
+      this.hammerDragCenter.get('press').set({time:10000});
 
       if (this.dom.box) {
         if (this.dom.dragLeft) {
@@ -7068,7 +7274,7 @@ class Item {
       anchor.appendChild(deleteButton);
       this.dom.deleteButton = deleteButton;
     }
-    else if (!this.selected && this.dom.deleteButton) {
+    else if ((!this.selected || !editable) && this.dom.deleteButton) {
       // remove button
       if (this.dom.deleteButton.parentNode) {
         this.dom.deleteButton.parentNode.removeChild(this.dom.deleteButton);
@@ -7149,12 +7355,12 @@ class Item {
         templateFunction = this.options.tooltipOnItemUpdateTime.template.bind(this);
         content = templateFunction(this.data);
       } else {
-        content = `start: ${moment(this.data.start).format('MM/DD/YYYY hh:mm')}`;
+        content = `start: ${moment$3(this.data.start).format('MM/DD/YYYY hh:mm')}`;
         if (this.data.end) { 
-          content += `<br> end: ${moment(this.data.end).format('MM/DD/YYYY hh:mm')}`;
+          content += `<br> end: ${moment$3(this.data.end).format('MM/DD/YYYY hh:mm')}`;
         }
       }
-      this.dom.onItemUpdateTimeTooltip.innerHTML = content;
+      this.dom.onItemUpdateTimeTooltip.innerHTML = availableUtils.xss(content);
     }
   }
 
@@ -7185,7 +7391,7 @@ class Item {
 
     if (this.options.visibleFrameTemplate) {
       visibleFrameTemplateFunction = this.options.visibleFrameTemplate.bind(this);
-      itemVisibleFrameContent = visibleFrameTemplateFunction(itemData, itemVisibleFrameContentElement);
+      itemVisibleFrameContent = availableUtils.xss(visibleFrameTemplateFunction(itemData, itemVisibleFrameContentElement));
     } else {
       itemVisibleFrameContent = '';
     }
@@ -7202,7 +7408,7 @@ class Item {
             itemVisibleFrameContentElement.appendChild(itemVisibleFrameContent);
           }
           else if (itemVisibleFrameContent != undefined) {
-            itemVisibleFrameContentElement.innerHTML = itemVisibleFrameContent;
+            itemVisibleFrameContentElement.innerHTML = availableUtils.xss(itemVisibleFrameContent);
           }
           else {
             if (!(this.data.type == 'background' && this.data.content === undefined)) {
@@ -7233,7 +7439,7 @@ class Item {
           element.appendChild(content);
         }
         else if (content != undefined) {
-          element.innerHTML = content;
+          element.innerHTML = availableUtils.xss(content);
         }
         else {
           if (!(this.data.type == 'background' && this.data.content === undefined)) {
@@ -7285,13 +7491,13 @@ class Item {
   _updateStyle(element) {
     // remove old styles
     if (this.style) {
-      util.removeCssText(element, this.style);
+      availableUtils.removeCssText(element, this.style);
       this.style = null;
     }
 
     // append new styles
     if (this.data.style) {
-      util.addCssText(element, this.data.style);
+      availableUtils.addCssText(element, this.data.style);
       this.style = this.data.style;
     }
   }
@@ -7321,7 +7527,7 @@ class Item {
         };
       } else if(typeof this.options.editable === 'object') {
           this.editable = {};
-          util.selectiveExtend(['updateTime', 'updateGroup', 'remove'], this.editable, this.options.editable);
+          availableUtils.selectiveExtend(['updateTime', 'updateGroup', 'remove'], this.editable, this.options.editable);
       }
     }
     // Item data overrides, except if options.editable.overrideItems is set.
@@ -7337,7 +7543,7 @@ class Item {
           // TODO: in timeline.js 5.0, we should change this to not reset options from the timeline configuration.
           // Basically just remove the next line...
           this.editable = {};
-          util.selectiveExtend(['updateTime', 'updateGroup', 'remove'], this.editable, this.data.editable);
+          availableUtils.selectiveExtend(['updateTime', 'updateGroup', 'remove'], this.editable, this.data.editable);
         }
       }
     }
@@ -7820,7 +8026,7 @@ class PointItem extends Item {
     }
     // determine visibility
     const widthInMs = this.width * range.getMillisecondsPerPixel();
-    
+
     return (this.data.start.getTime() + widthInMs > range.start ) && (this.data.start < range.end);
   }
 
@@ -7930,9 +8136,9 @@ class PointItem extends Item {
 
     // resize contents
     if (this.options.rtl) {
-      this.dom.content.style.marginRight = `${2 * this.props.dot.width}px`;
+      this.dom.content.style.marginRight = `${this.props.dot.width / 2}px`;
     } else {
-      this.dom.content.style.marginLeft = `${2 * this.props.dot.width}px`;
+      this.dom.content.style.marginLeft = `${this.props.dot.width / 2}px`;
     }
     //this.dom.content.style.marginRight = ... + 'px'; // TODO: margin right
 
@@ -7942,9 +8148,9 @@ class PointItem extends Item {
 
     // reposition the dot
     this.dom.dot.style.top = `${(this.height - this.props.dot.height) / 2}px`;
-    
+
     const dotWidth = this.props.dot.width;
-    const translateX = this.options.rtl ? (dotWidth / 2) * -1 : dotWidth / 2;
+    const translateX = this.options.rtl ? dotWidth / 2 : (dotWidth / 2) * -1;
     this.dom.dot.style.transform = `translateX(${translateX}px`;
     this.dirty = false;
   }
@@ -8003,13 +8209,13 @@ class PointItem extends Item {
     }
   }
 
-  
+
   /**
    * Reposition XY
    */
   repositionXY() {
     const rtl = this.options.rtl;
-    
+
     const repositionXY = (element, x, y, rtl = false) => {
       if (x === undefined && y === undefined) return;
       // If rtl invert the number.
@@ -8831,7 +9037,7 @@ class Popup {
       this.frame.appendChild(content);
     }
     else {
-      this.frame.innerHTML = content; // string containing text or HTML
+      this.frame.innerHTML = availableUtils.xss(content); // string containing text or HTML
     }
   }
 
@@ -8991,7 +9197,7 @@ class ClusterItem extends Item {
   isVisible(range) {
     const rangeWidth = this.data.end ? this.data.end - this.data.start : 0;
     const widthInMs = this.width * range.getMillisecondsPerPixel();
-    const end = Math.max(rangeWidth, this.data.start.getTime() + widthInMs);
+    const end = Math.max(this.data.start.getTime() + rangeWidth, this.data.start.getTime() + widthInMs);
     return (this.data.start < range.end) && (end > range.start) && this.hasItems();
   }
   
@@ -9567,11 +9773,11 @@ class ClusterItem extends Item {
 
 ClusterItem.prototype.baseClassName = 'vis-item vis-range vis-cluster';
 
-const UNGROUPED$1 = '__ungrouped__';   // reserved group id for ungrouped items
+const UNGROUPED$2 = '__ungrouped__';   // reserved group id for ungrouped items
 const BACKGROUND$1 = '__background__'; // reserved group id for background items without group
 
-const ReservedGroupIds$1 = {
-  UNGROUPED: UNGROUPED$1,
+const ReservedGroupIds = {
+  UNGROUPED: UNGROUPED$2,
   BACKGROUND: BACKGROUND$1
 };
 
@@ -9721,14 +9927,14 @@ class ClusterGenerator {
                             // and calculate the average start for the cluster
                             let m = i;
                             while (clusterItems.length < num && m < items.length) {
-                                if (clusterCriteria(items[m].data, items[m].data)) {
+                                if (clusterCriteria(items[i].data, items[m].data)) {
                                     clusterItems.push(items[m]);
                                 }
                                 m++;
                             }
 
                             const groupId = this.itemSet.getGroupId(item.data);
-                            const group = this.itemSet.groups[groupId] || this.itemSet.groups[ReservedGroupIds$1.UNGROUPED];
+                            const group = this.itemSet.groups[groupId] || this.itemSet.groups[ReservedGroupIds.UNGROUPED];
                             let cluster = this._getClusterForItems(clusterItems, group, oldClusters, options);
                             clusters.push(cluster);
 
@@ -9871,8 +10077,8 @@ class ClusterGenerator {
     }
 }
 
-const UNGROUPED$2 = '__ungrouped__';   // reserved group id for ungrouped items
-const BACKGROUND$2 = '__background__'; // reserved group id for background items without group
+const UNGROUPED$1 = '__ungrouped__';   // reserved group id for ungrouped items
+const BACKGROUND = '__background__'; // reserved group id for background items without group
 
 /**
  * An ItemSet holds a set of items and ranges which can be displayed in a
@@ -9977,7 +10183,7 @@ class ItemSet extends Component {
     };
 
     // options is shared by this ItemSet and all its items
-    this.options = util.extend({}, this.defaultOptions);
+    this.options = availableUtils.extend({}, this.defaultOptions);
     this.options.rtl = options.rtl;
     this.options.onTimeout = options.onTimeout;
 
@@ -10115,9 +10321,9 @@ class ItemSet extends Component {
     this._updateUngrouped();
 
     // create background Group
-    const backgroundGroup = new BackgroundGroup(BACKGROUND$2, null, this);
+    const backgroundGroup = new BackgroundGroup(BACKGROUND, null, this);
     backgroundGroup.show();
-    this.groups[BACKGROUND$2] = backgroundGroup;
+    this.groups[BACKGROUND] = backgroundGroup;
 
     // attach event listeners
     // Note: we bind to the centerContainer for the case where the height
@@ -10135,12 +10341,16 @@ class ItemSet extends Component {
     this.hammer.on('panmove',  this._onDrag.bind(this));
     this.hammer.on('panend',   this._onDragEnd.bind(this));
     this.hammer.get('pan').set({threshold:5, direction: Hammer.ALL});
+    // delay addition on item click for trackpads...
+    this.hammer.get('press').set({time:10000});
 
     // single select (or unselect) when tapping an item
     this.hammer.on('tap',  this._onSelectItem.bind(this));
 
     // multi select when holding mouse/touch, or on ctrl+click
     this.hammer.on('press', this._onMultiSelectItem.bind(this));
+    // delay addition on item click for trackpads...
+    this.hammer.get('press').set({time:10000});
 
     // add item on doubletap
     this.hammer.on('doubletap', this._onAddItem.bind(this));
@@ -10241,7 +10451,7 @@ class ItemSet extends Component {
         'multiselectPerGroup', 'longSelectPressTime', 'groupOrder', 'dataAttributes', 'template', 'groupTemplate', 'visibleFrameTemplate',
         'hide', 'snap', 'groupOrderSwap', 'showTooltips', 'tooltip', 'tooltipOnItemUpdateTime', 'groupHeightMode', 'onTimeout'
       ];
-      util.selectiveExtend(fields, this.options, options);
+      availableUtils.selectiveExtend(fields, this.options, options);
 
       if ('itemsAlwaysDraggable' in options) {
         if (typeof options.itemsAlwaysDraggable === 'boolean') {
@@ -10249,7 +10459,7 @@ class ItemSet extends Component {
           this.options.itemsAlwaysDraggable.range = false;
         }
         else if (typeof options.itemsAlwaysDraggable === 'object') {
-          util.selectiveExtend(['item', 'range'], this.options.itemsAlwaysDraggable, options.itemsAlwaysDraggable);
+          availableUtils.selectiveExtend(['item', 'range'], this.options.itemsAlwaysDraggable, options.itemsAlwaysDraggable);
           // only allow range always draggable when item is always draggable as well
           if (! this.options.itemsAlwaysDraggable.item) {
             this.options.itemsAlwaysDraggable.range = false;
@@ -10279,14 +10489,14 @@ class ItemSet extends Component {
           this.options.margin.item.vertical = options.margin;
         }
         else if (typeof options.margin === 'object') {
-          util.selectiveExtend(['axis'], this.options.margin, options.margin);
+          availableUtils.selectiveExtend(['axis'], this.options.margin, options.margin);
           if ('item' in options.margin) {
             if (typeof options.margin.item === 'number') {
               this.options.margin.item.horizontal = options.margin.item;
               this.options.margin.item.vertical = options.margin.item;
             }
             else if (typeof options.margin.item === 'object') {
-              util.selectiveExtend(['horizontal', 'vertical'], this.options.margin.item, options.margin.item);
+              availableUtils.selectiveExtend(['horizontal', 'vertical'], this.options.margin.item, options.margin.item);
             }
           }
         }
@@ -10307,7 +10517,7 @@ class ItemSet extends Component {
           this.options.editable.overrideItems = false;
         }
         else if (typeof options.editable === 'object') {
-          util.selectiveExtend(['updateTime', 'updateGroup', 'add', 'remove', 'overrideItems'], this.options.editable, options.editable);
+          availableUtils.selectiveExtend(['updateTime', 'updateGroup', 'add', 'remove', 'overrideItems'], this.options.editable, options.editable);
         }
       }
 
@@ -10318,7 +10528,7 @@ class ItemSet extends Component {
           this.options.groupEditable.remove = options.groupEditable;
         }
         else if (typeof options.groupEditable === 'object') {
-          util.selectiveExtend(['order', 'add', 'remove'], this.options.groupEditable, options.groupEditable);
+          availableUtils.selectiveExtend(['order', 'add', 'remove'], this.options.groupEditable, options.groupEditable);
         }
       }
 
@@ -10370,15 +10580,15 @@ class ItemSet extends Component {
 
     if (options) {
       if (options.refreshItems) {
-        util.forEach(this.items, item => {
+        availableUtils.forEach(this.items, item => {
           item.dirty = true;
           if (item.displayed) item.redraw();
         });
       }
       
       if (options.restackGroups) {
-        util.forEach(this.groups, (group, key) => {
-          if (key === BACKGROUND$2) return;
+        availableUtils.forEach(this.groups, (group, key) => {
+          if (key === BACKGROUND) return;
           group.stackDirty = true;
         });
       }
@@ -10561,6 +10771,46 @@ class ItemSet extends Component {
     return ids;
   }
 
+    /**
+   * Get the id's of the items at specific time, where a click takes place on the timeline.
+   * @returns {Array} The ids of all items in existence at the time of click event on the timeline.
+   */
+  getItemsAtCurrentTime(timeOfEvent) {
+    let right;
+    let left;
+
+    if (this.options.rtl) { 
+      right  = this.body.util.toScreen(timeOfEvent);
+      left = this.body.util.toScreen(timeOfEvent);
+    } else {
+      left  = this.body.util.toScreen(timeOfEvent);
+      right = this.body.util.toScreen(timeOfEvent);
+    }
+
+    const ids = [];
+    for (const groupId in this.groups) {
+      if (this.groups.hasOwnProperty(groupId)) {
+        const group = this.groups[groupId];
+        const rawVisibleItems = group.isVisible ? group.visibleItems : [];
+
+        // filter the "raw" set with visibleItems into a set which is really
+        // visible by pixels
+        for (const item of rawVisibleItems) {
+          if (this.options.rtl) { 
+            if ((item.right < left) && (item.right + item.width > right)) {
+              ids.push(item.id);
+            }
+          } else {
+            if ((item.left < right) && (item.left + item.width > left)) {
+              ids.push(item.id);
+            }
+          }
+        }
+      }
+    }
+    return ids;
+  }
+
   /**
    * Get the id's of the currently visible groups.
    * @returns {Array} The ids of the visible groups
@@ -10611,7 +10861,7 @@ class ItemSet extends Component {
   redraw() {
     const margin = this.options.margin;
     const range = this.body.range;
-    const asSize = util.option.asSize;
+    const asSize = availableUtils.option.asSize;
     const options = this.options;
     const orientation = options.orientation.item;
     let resized = false;
@@ -10663,14 +10913,14 @@ class ItemSet extends Component {
     const minHeight = margin.axis + margin.item.vertical;
 
     // redraw the background group
-    this.groups[BACKGROUND$2].redraw(range, nonFirstMargin, forceRestack);
+    this.groups[BACKGROUND].redraw(range, nonFirstMargin, forceRestack);
 
     const redrawQueue = {};
     let redrawQueueLength = 0;
 
     // collect redraw functions
-    util.forEach(this.groups, (group, key) => {
-      if (key === BACKGROUND$2) return;
+    availableUtils.forEach(this.groups, (group, key) => {
+      if (key === BACKGROUND) return;
       const groupMargin = group == firstGroup ? firstMargin : nonFirstMargin;
       const returnQueue = true;
       redrawQueue[key] = group.redraw(range, groupMargin, forceRestack, returnQueue);
@@ -10682,14 +10932,14 @@ class ItemSet extends Component {
       const redrawResults = {};
 
       for (let i = 0; i < redrawQueueLength; i++) {
-        util.forEach(redrawQueue, (fns, key) => {
+        availableUtils.forEach(redrawQueue, (fns, key) => {
           redrawResults[key] = fns[i]();
         });
       }
 
       // redraw all regular groups
-      util.forEach(this.groups, (group, key) => {
-        if (key === BACKGROUND$2) return;
+      availableUtils.forEach(this.groups, (group, key) => {
+        if (key === BACKGROUND) return;
         const groupResized = redrawResults[key];
         resized = groupResized || resized;
         height += group.height;
@@ -10733,7 +10983,7 @@ class ItemSet extends Component {
   _firstGroup() {
     const firstGroupIndex = (this.options.orientation.item == 'top') ? 0 : (this.groupIds.length - 1);
     const firstGroupId = this.groupIds[firstGroupIndex];
-    const firstGroup = this.groups[firstGroupId] || this.groups[UNGROUPED$2];
+    const firstGroup = this.groups[firstGroupId] || this.groups[UNGROUPED$1];
 
     return firstGroup || null;
   }
@@ -10744,7 +10994,7 @@ class ItemSet extends Component {
    * @protected
    */
   _updateUngrouped() {
-    let ungrouped = this.groups[UNGROUPED$2];
+    let ungrouped = this.groups[UNGROUPED$1];
     let item;
     let itemId;
 
@@ -10752,7 +11002,7 @@ class ItemSet extends Component {
       // remove the group holding all ungrouped items
       if (ungrouped) {
         ungrouped.dispose();
-        delete this.groups[UNGROUPED$2];
+        delete this.groups[UNGROUPED$1];
 
         for (itemId in this.items) {
           if (this.items.hasOwnProperty(itemId)) {
@@ -10771,7 +11021,7 @@ class ItemSet extends Component {
         const id = null;
         const data = null;
         ungrouped = new Group(id, data, this);
-        this.groups[UNGROUPED$2] = ungrouped;
+        this.groups[UNGROUPED$1] = ungrouped;
 
         for (itemId in this.items) {
           if (this.items.hasOwnProperty(itemId)) {
@@ -10807,16 +11057,16 @@ class ItemSet extends Component {
     if (!items) {
       this.itemsData = null;
     }
-    else if (items instanceof DataSet || items instanceof DataView) {
+    else if (isDataViewLike(items)) {
       this.itemsData = typeCoerceDataSet(items);
     }
     else {
-      throw new TypeError('Data must be an instance of DataSet or DataView');
+      throw new TypeError('Data must implement the interface of DataSet or DataView');
     }
 
     if (oldItemsData) {
       // unsubscribe from old dataset
-      util.forEach(this.itemListeners, (callback, event) => {
+      availableUtils.forEach(this.itemListeners, (callback, event) => {
         oldItemsData.off(event, callback);
       });
 
@@ -10831,7 +11081,7 @@ class ItemSet extends Component {
     if (this.itemsData) {
       // subscribe to new dataset
       const id = this.id;
-      util.forEach(this.itemListeners, (callback, event) => {
+      availableUtils.forEach(this.itemListeners, (callback, event) => {
         me.itemsData.on(event, callback, id);
       });
 
@@ -10864,7 +11114,7 @@ class ItemSet extends Component {
 
     // unsubscribe from current dataset
     if (this.groupsData) {
-      util.forEach(this.groupListeners, (callback, event) => {
+      availableUtils.forEach(this.groupListeners, (callback, event) => {
         me.groupsData.off(event, callback);
       });
 
@@ -10878,19 +11128,16 @@ class ItemSet extends Component {
     if (!groups) {
       this.groupsData = null;
     }
-    else if (groups instanceof DataSet || groups instanceof DataView) {
+    else if (isDataViewLike(groups)) {
       this.groupsData = groups;
     }
     else {
-      throw new TypeError('Data must be an instance of DataSet or DataView');
+      throw new TypeError('Data must implement the interface of DataSet or DataView');
     }
 
     if (this.groupsData) {
       // go over all groups nesting
-      let groupsData = this.groupsData;
-      if (this.groupsData instanceof DataView) {
-        groupsData = this.groupsData.getDataSet();
-      }
+      const groupsData = this.groupsData.getDataSet();
 
       groupsData.get().forEach(group => {
         if (group.nestedGroups) {
@@ -10907,7 +11154,7 @@ class ItemSet extends Component {
 
       // subscribe to new dataset
       const id = this.id;
-      util.forEach(this.groupListeners, (callback, event) => {
+      availableUtils.forEach(this.groupListeners, (callback, event) => {
         me.groupsData.on(event, callback, id);
       });
 
@@ -10977,10 +11224,10 @@ class ItemSet extends Component {
   getGroupId(itemData) {
     const type = this._getType(itemData);
     if (type == 'background' && itemData.group == undefined) {
-     return BACKGROUND$2;
+     return BACKGROUND;
     }
     else {
-      return this.groupsData ? itemData.group : UNGROUPED$2;
+      return this.groupsData ? itemData.group : UNGROUPED$1;
     }
   }
 
@@ -11071,7 +11318,7 @@ class ItemSet extends Component {
   _order() {
     // reorder the items in all groups
     // TODO: optimization: only reorder groups affected by the changed items
-    util.forEach(this.groups, group => {
+    availableUtils.forEach(this.groups, group => {
       group.order();
     });
   }
@@ -11099,12 +11346,12 @@ class ItemSet extends Component {
 
       if (!group) {
         // check for reserved ids
-        if (id == UNGROUPED$2 || id == BACKGROUND$2) {
+        if (id == UNGROUPED$1 || id == BACKGROUND) {
           throw new Error(`Illegal group id. ${id} is a reserved id.`);
         }
 
         const groupOptions = Object.create(me.options);
-        util.extend(groupOptions, {
+        availableUtils.extend(groupOptions, {
           height: null
         });
 
@@ -11171,7 +11418,7 @@ class ItemSet extends Component {
 
       groupIds = this._orderNestedGroups(groupIds);
 
-      const changed = !util.equalArray(groupIds, this.groupIds);
+      const changed = !availableUtils.equalArray(groupIds, this.groupIds);
       if (changed) {
         // hide all groups, removes them from the DOM
         const groups = this.groups;
@@ -11559,14 +11806,14 @@ class ItemSet extends Component {
             // drag left side of a range item
             if (this.options.rtl) {
               if (itemData.end != undefined) {
-                initialEnd = util.convert(props.data.end, 'Date');
+                initialEnd = availableUtils.convert(props.data.end, 'Date');
                 end = new Date(initialEnd.valueOf() + offset);
                 // TODO: pass a Moment instead of a Date to snap(). (Breaking change)
                 itemData.end = snap ? snap(end, scale, step) : end;
               }
             } else {
               if (itemData.start != undefined) {
-                initialStart = util.convert(props.data.start, 'Date');
+                initialStart = availableUtils.convert(props.data.start, 'Date');
                 start = new Date(initialStart.valueOf() + offset);
                 // TODO: pass a Moment instead of a Date to snap(). (Breaking change)
                 itemData.start = snap ? snap(start, scale, step) : start;
@@ -11577,14 +11824,14 @@ class ItemSet extends Component {
             // drag right side of a range item
             if (this.options.rtl) {
               if (itemData.start != undefined) {
-                initialStart = util.convert(props.data.start, 'Date');
+                initialStart = availableUtils.convert(props.data.start, 'Date');
                 start = new Date(initialStart.valueOf() + offset);
                 // TODO: pass a Moment instead of a Date to snap(). (Breaking change)
                 itemData.start = snap ? snap(start, scale, step) : start;
               }
             } else {
               if (itemData.end != undefined) {
-                initialEnd = util.convert(props.data.end, 'Date');
+                initialEnd = availableUtils.convert(props.data.end, 'Date');
                 end = new Date(initialEnd.valueOf() + offset);
                 // TODO: pass a Moment instead of a Date to snap(). (Breaking change)
                 itemData.end = snap ? snap(end, scale, step) : end;
@@ -11595,11 +11842,11 @@ class ItemSet extends Component {
             // drag both start and end
             if (itemData.start != undefined) {
 
-              initialStart = util.convert(props.data.start, 'Date').valueOf();
+              initialStart = availableUtils.convert(props.data.start, 'Date').valueOf();
               start = new Date(initialStart + offset);
 
               if (itemData.end != undefined) {
-                initialEnd = util.convert(props.data.end, 'Date');
+                initialEnd = availableUtils.convert(props.data.end, 'Date');
                 const duration  = initialEnd.valueOf() - initialStart.valueOf();
 
                 // TODO: pass a Moment instead of a Date to snap(). (Breaking change)
@@ -11756,22 +12003,47 @@ class ItemSet extends Component {
         fullNestedGroups = fullNestedGroups.concat(nextLevel);
       }
     }
-    let nestedGroups = groupsData.get(fullNestedGroups).map(function (nestedGroup) {
+    var nestedGroups;
+    if (nestingGroup.showNested) {
+      var showNestedGroups = groupsData.get(nestingGroup.nestedGroups);
+      for (let i = 0; i < showNestedGroups.length; i++) {
+        let group = showNestedGroups[i];
+        if (
+          group.nestedGroups &&
+          group.nestedGroups.length > 0 &&
+          (group.showNested == undefined || group.showNested == true)
+        ) {
+          showNestedGroups.push(...groupsData.get(group.nestedGroups));
+        }        
+      }
+      nestedGroups = showNestedGroups.map(function (nestedGroup) {
         if (nestedGroup.visible == undefined) {
           nestedGroup.visible = true;
         }
         nestedGroup.visible = !!nestingGroup.showNested;
+
         return nestedGroup;
       });
+    } else {
+      nestedGroups = groupsData
+        .get(fullNestedGroups)
+        .map(function (nestedGroup) {
+          if (nestedGroup.visible == undefined) {
+            nestedGroup.visible = true;
+          }
+          nestedGroup.visible = !!nestingGroup.showNested;
+          return nestedGroup;
+        });
+    }
 
     groupsData.update(nestedGroups.concat(nestingGroup));
 
     if (nestingGroup.showNested) {
-      util.removeClassName(group.dom.label, 'collapsed');
-      util.addClassName(group.dom.label, 'expanded');
+      availableUtils.removeClassName(group.dom.label, 'collapsed');
+      availableUtils.addClassName(group.dom.label, 'expanded');
     } else {
-      util.removeClassName(group.dom.label, 'expanded');
-      util.addClassName(group.dom.label, 'collapsed');
+      availableUtils.removeClassName(group.dom.label, 'expanded');
+      availableUtils.addClassName(group.dom.label, 'collapsed');
     }
   }
   
@@ -11819,10 +12091,7 @@ class ItemSet extends Component {
       if (this.options.groupEditable.order && this.groupTouchParams.group) {
           event.stopPropagation();
           
-      let groupsData = this.groupsData;
-      if (this.groupsData instanceof DataView) {
-        groupsData = this.groupsData.getDataSet();
-      }
+      const groupsData = this.groupsData.getDataSet();
           // drag from one group to another
           const group = this.groupFromTarget(event);
           
@@ -11864,7 +12133,7 @@ class ItemSet extends Component {
 
               
               // in case of changes since _onGroupDragStart
-              if (!util.equalArray(newOrder, this.groupTouchParams.originalOrder)) {
+              if (!availableUtils.equalArray(newOrder, this.groupTouchParams.originalOrder)) {
                   const origOrder = this.groupTouchParams.originalOrder;
                   const draggedId = this.groupTouchParams.group.groupId;
                   const numGroups = Math.min(origOrder.length, newOrder.length);
@@ -11934,7 +12203,7 @@ class ItemSet extends Component {
       const me = this;
       const id = me.groupTouchParams.group.groupId;
       const dataset = me.groupsData.getDataSet();
-      const groupData = util.extend({}, dataset.get(id)); // clone the data
+      const groupData = availableUtils.extend({}, dataset.get(id)); // clone the data
       me.options.onMoveGroup(groupData, groupData => {
         if (groupData) {
           // apply changes
@@ -11949,7 +12218,7 @@ class ItemSet extends Component {
           });
 
           // restore original order
-          if (!util.equalArray(newOrder, me.groupTouchParams.originalOrder)) {
+          if (!availableUtils.equalArray(newOrder, me.groupTouchParams.originalOrder)) {
             const origOrder = me.groupTouchParams.originalOrder;
             const numGroups = Math.min(origOrder.length, newOrder.length);
             let curPos = 0;
@@ -12450,7 +12719,7 @@ class ItemSet extends Component {
    * @private
    */
   _cloneItemData(itemData, type) {
-    const clone = util.extend({}, itemData);
+    const clone = availableUtils.extend({}, itemData);
 
     if (!type) {
       // convert start and end date to the type (Date, Moment, ...) configured in the DataSet
@@ -12458,10 +12727,10 @@ class ItemSet extends Component {
     }
 
     if (clone.start != undefined) {
-      clone.start = util.convert(clone.start, type && type.start || 'Date');
+      clone.start = availableUtils.convert(clone.start, type && type.start || 'Date');
     }
     if (clone.end != undefined) {
-      clone.end = util.convert(clone.end , type && type.end || 'Date');
+      clone.end = availableUtils.convert(clone.end , type && type.end || 'Date');
     }
 
     return clone;
@@ -12556,7 +12825,7 @@ ItemSet.types = {
 ItemSet.prototype._onAdd = ItemSet.prototype._onUpdate;
 
 let errorFound = false;
-let allOptions;
+let allOptions$2;
 let printStyle = 'background: #FFeeee; color: #dd0000';
 /**
  *  Used to validate options.
@@ -12578,7 +12847,7 @@ class Validator {
    */
   static validate(options, referenceOptions, subObject) {
     errorFound = false;
-    allOptions = referenceOptions;
+    allOptions$2 = referenceOptions;
     let usedOptions = referenceOptions;
     if (subObject !== undefined) {
       usedOptions = referenceOptions[subObject];
@@ -12669,7 +12938,7 @@ class Validator {
         errorFound = true;
       }
       else if (optionType === 'object' && referenceOption !== "__any__") {
-        path = util.copyAndExtendArray(path, option);
+        path = availableUtils.copyAndExtendArray(path, option);
         Validator.parse(options[option], referenceOptions[referenceOption], path);
       }
     }
@@ -12741,7 +13010,7 @@ class Validator {
    */
   static getSuggestion(option, options, path) {
     let localSearch = Validator.findInOptions(option,options,path,false);
-    let globalSearch = Validator.findInOptions(option,allOptions,[],true);
+    let globalSearch = Validator.findInOptions(option,allOptions$2,[],true);
 
     let localSearchThreshold = 8;
     let globalSearchThreshold = 4;
@@ -12787,7 +13056,7 @@ class Validator {
     for (let op in options) {  // eslint-disable-line guard-for-in
       let distance;
       if (options[op].__type__ !== undefined && recursive === true) {
-        let result = Validator.findInOptions(option, options[op], util.copyAndExtendArray(path,op));
+        let result = Validator.findInOptions(option, options[op], availableUtils.copyAndExtendArray(path,op));
         if (min > result.distance) {
           closestMatch = result.closestMatch;
           closestMatchPath = result.path;
@@ -12802,7 +13071,7 @@ class Validator {
         distance = Validator.levenshteinDistance(option, op);
         if (min > distance) {
           closestMatch = op;
-          closestMatchPath = util.copyArray(path);
+          closestMatchPath = availableUtils.copyArray(path);
           min = distance;
         }
       }
@@ -12907,126 +13176,126 @@ class Validator {
  * __any__ means that the name of the property does not matter.
  * __type__ is a required field for all objects and contains the allowed types of all objects
  */
-let string = 'string';
-let bool = 'boolean';
-let number = 'number';
-let array = 'array';
-let date = 'date';
-let object = 'object'; // should only be in a __type__ property
-let dom = 'dom';
+let string$1 = 'string';
+let bool$1 = 'boolean';
+let number$1 = 'number';
+let array$1 = 'array';
+let date$1 = 'date';
+let object$1 = 'object'; // should only be in a __type__ property
+let dom$1 = 'dom';
 let moment$1 = 'moment';
-let any = 'any';
+let any$1 = 'any';
 
 let allOptions$1 = {
   configure: {
-    enabled: { 'boolean': bool},
-    filter: { 'boolean': bool,'function': 'function'},
-    container: {dom},
-    __type__: {object, 'boolean': bool,'function': 'function'}
+    enabled: { 'boolean': bool$1},
+    filter: { 'boolean': bool$1,'function': 'function'},
+    container: {dom: dom$1},
+    __type__: {object: object$1, 'boolean': bool$1,'function': 'function'}
   },
 
   //globals :
-  align: {string},
-  alignCurrentTime: {string, 'undefined': 'undefined'},
-  rtl: { 'boolean': bool, 'undefined': 'undefined'},
+  align: {string: string$1},
+  alignCurrentTime: {string: string$1, 'undefined': 'undefined'},
+  rtl: { 'boolean': bool$1, 'undefined': 'undefined'},
   rollingMode: {
-    follow: { 'boolean': bool },
-    offset: {number,'undefined': 'undefined'},
-    __type__: {object}
+    follow: { 'boolean': bool$1 },
+    offset: {number: number$1,'undefined': 'undefined'},
+    __type__: {object: object$1}
   },
   onTimeout: {
-    timeoutMs: {number},
+    timeoutMs: {number: number$1},
     callback: {'function': 'function'},
-    __type__: {object}
+    __type__: {object: object$1}
   },
-  verticalScroll: { 'boolean': bool, 'undefined': 'undefined'},
-  horizontalScroll: { 'boolean': bool, 'undefined': 'undefined'},
-  autoResize: { 'boolean': bool},
-  throttleRedraw: {number}, // TODO: DEPRICATED see https://github.com/almende/vis/issues/2511
-  clickToUse: { 'boolean': bool},
-  dataAttributes: {string, array},
+  verticalScroll: { 'boolean': bool$1, 'undefined': 'undefined'},
+  horizontalScroll: { 'boolean': bool$1, 'undefined': 'undefined'},
+  autoResize: { 'boolean': bool$1},
+  throttleRedraw: {number: number$1}, // TODO: DEPRICATED see https://github.com/almende/vis/issues/2511
+  clickToUse: { 'boolean': bool$1},
+  dataAttributes: {string: string$1, array: array$1},
   editable: {
-    add: { 'boolean': bool, 'undefined': 'undefined'},
-    remove: { 'boolean': bool, 'undefined': 'undefined'},
-    updateGroup: { 'boolean': bool, 'undefined': 'undefined'},
-    updateTime: { 'boolean': bool, 'undefined': 'undefined'},
-    overrideItems: { 'boolean': bool, 'undefined': 'undefined'},
-    __type__: { 'boolean': bool, object}
+    add: { 'boolean': bool$1, 'undefined': 'undefined'},
+    remove: { 'boolean': bool$1, 'undefined': 'undefined'},
+    updateGroup: { 'boolean': bool$1, 'undefined': 'undefined'},
+    updateTime: { 'boolean': bool$1, 'undefined': 'undefined'},
+    overrideItems: { 'boolean': bool$1, 'undefined': 'undefined'},
+    __type__: { 'boolean': bool$1, object: object$1}
   },
-  end: {number, date, string, moment: moment$1},
+  end: {number: number$1, date: date$1, string: string$1, moment: moment$1},
   format: {
     minorLabels: {
-      millisecond: {string,'undefined': 'undefined'},
-      second: {string,'undefined': 'undefined'},
-      minute: {string,'undefined': 'undefined'},
-      hour: {string,'undefined': 'undefined'},
-      weekday: {string,'undefined': 'undefined'},
-      day: {string,'undefined': 'undefined'},
-      week: {string,'undefined': 'undefined'},
-      month: {string,'undefined': 'undefined'},
-      year: {string,'undefined': 'undefined'},
-      __type__: {object, 'function': 'function'}
+      millisecond: {string: string$1,'undefined': 'undefined'},
+      second: {string: string$1,'undefined': 'undefined'},
+      minute: {string: string$1,'undefined': 'undefined'},
+      hour: {string: string$1,'undefined': 'undefined'},
+      weekday: {string: string$1,'undefined': 'undefined'},
+      day: {string: string$1,'undefined': 'undefined'},
+      week: {string: string$1,'undefined': 'undefined'},
+      month: {string: string$1,'undefined': 'undefined'},
+      year: {string: string$1,'undefined': 'undefined'},
+      __type__: {object: object$1, 'function': 'function'}
     },
     majorLabels: {
-      millisecond: {string,'undefined': 'undefined'},
-      second: {string,'undefined': 'undefined'},
-      minute: {string,'undefined': 'undefined'},
-      hour: {string,'undefined': 'undefined'},
-      weekday: {string,'undefined': 'undefined'},
-      day: {string,'undefined': 'undefined'},
-      week: {string,'undefined': 'undefined'},
-      month: {string,'undefined': 'undefined'},
-      year: {string,'undefined': 'undefined'},
-      __type__: {object, 'function': 'function'}
+      millisecond: {string: string$1,'undefined': 'undefined'},
+      second: {string: string$1,'undefined': 'undefined'},
+      minute: {string: string$1,'undefined': 'undefined'},
+      hour: {string: string$1,'undefined': 'undefined'},
+      weekday: {string: string$1,'undefined': 'undefined'},
+      day: {string: string$1,'undefined': 'undefined'},
+      week: {string: string$1,'undefined': 'undefined'},
+      month: {string: string$1,'undefined': 'undefined'},
+      year: {string: string$1,'undefined': 'undefined'},
+      __type__: {object: object$1, 'function': 'function'}
     },
-    __type__: {object}
+    __type__: {object: object$1}
   },
   moment: {'function': 'function'},
-  groupHeightMode: {string},
-  groupOrder: {string, 'function': 'function'},
+  groupHeightMode: {string: string$1},
+  groupOrder: {string: string$1, 'function': 'function'},
   groupEditable: {
-    add: { 'boolean': bool, 'undefined': 'undefined'},
-    remove: { 'boolean': bool, 'undefined': 'undefined'},
-    order: { 'boolean': bool, 'undefined': 'undefined'},
-    __type__: { 'boolean': bool, object}
+    add: { 'boolean': bool$1, 'undefined': 'undefined'},
+    remove: { 'boolean': bool$1, 'undefined': 'undefined'},
+    order: { 'boolean': bool$1, 'undefined': 'undefined'},
+    __type__: { 'boolean': bool$1, object: object$1}
   },
   groupOrderSwap: {'function': 'function'},
-  height: {string, number},
+  height: {string: string$1, number: number$1},
   hiddenDates: {
-    start: {date, number, string, moment: moment$1},
-    end: {date, number, string, moment: moment$1},
-    repeat: {string},
-    __type__: {object, array}
+    start: {date: date$1, number: number$1, string: string$1, moment: moment$1},
+    end: {date: date$1, number: number$1, string: string$1, moment: moment$1},
+    repeat: {string: string$1},
+    __type__: {object: object$1, array: array$1}
   },
   itemsAlwaysDraggable: {
-    item: { 'boolean': bool, 'undefined': 'undefined'},
-    range: { 'boolean': bool, 'undefined': 'undefined'},
-    __type__: { 'boolean': bool, object}
+    item: { 'boolean': bool$1, 'undefined': 'undefined'},
+    range: { 'boolean': bool$1, 'undefined': 'undefined'},
+    __type__: { 'boolean': bool$1, object: object$1}
   },
-  limitSize: {'boolean': bool},
-  locale:{string},
+  limitSize: {'boolean': bool$1},
+  locale:{string: string$1},
   locales:{
-    __any__: {any},
-    __type__: {object}
+    __any__: {any: any$1},
+    __type__: {object: object$1}
   },
-  longSelectPressTime: {number},
+  longSelectPressTime: {number: number$1},
   margin: {
-    axis: {number},
+    axis: {number: number$1},
     item: {
-      horizontal: {number,'undefined': 'undefined'},
-      vertical: {number,'undefined': 'undefined'},
-      __type__: {object,number}
+      horizontal: {number: number$1,'undefined': 'undefined'},
+      vertical: {number: number$1,'undefined': 'undefined'},
+      __type__: {object: object$1,number: number$1}
     },
-    __type__: {object,number}
+    __type__: {object: object$1,number: number$1}
   },
-  max: {date, number, string, moment: moment$1},
-  maxHeight: {number, string},
-  maxMinorChars: {number},
-  min: {date, number, string, moment: moment$1},
-  minHeight: {number, string},
-  moveable: { 'boolean': bool},
-  multiselect: { 'boolean': bool},
-  multiselectPerGroup: { 'boolean': bool},
+  max: {date: date$1, number: number$1, string: string$1, moment: moment$1},
+  maxHeight: {number: number$1, string: string$1},
+  maxMinorChars: {number: number$1},
+  min: {date: date$1, number: number$1, string: string$1, moment: moment$1},
+  minHeight: {number: number$1, string: string$1},
+  moveable: { 'boolean': bool$1},
+  multiselect: { 'boolean': bool$1},
+  multiselectPerGroup: { 'boolean': bool$1},
   onAdd: {'function': 'function'},
   onDropObjectOnItem: {'function': 'function'},
   onUpdate: {'function': 'function'},
@@ -13039,62 +13308,69 @@ let allOptions$1 = {
   onInitialDrawComplete: {'function': 'function'},
   order: {'function': 'function'},
   orientation: {
-    axis: {string,'undefined': 'undefined'},
-    item: {string,'undefined': 'undefined'},
-    __type__: {string, object}
+    axis: {string: string$1,'undefined': 'undefined'},
+    item: {string: string$1,'undefined': 'undefined'},
+    __type__: {string: string$1, object: object$1}
   },
-  selectable: { 'boolean': bool},
-  sequentialSelection: { 'boolean': bool },
-  showCurrentTime: { 'boolean': bool},
-  showMajorLabels: { 'boolean': bool},
-  showMinorLabels: { 'boolean': bool},
-  showWeekScale: { 'boolean': bool},
-  stack: { 'boolean': bool},
-  stackSubgroups: { 'boolean': bool},
-  cluster: { 
-    maxItems: {'number': number, 'undefined': 'undefined'},
-    titleTemplate: {'string': string, 'undefined': 'undefined'},
+  selectable: { 'boolean': bool$1},
+  sequentialSelection: { 'boolean': bool$1 },
+  showCurrentTime: { 'boolean': bool$1},
+  showMajorLabels: { 'boolean': bool$1},
+  showMinorLabels: { 'boolean': bool$1},
+  showWeekScale: { 'boolean': bool$1},
+  stack: { 'boolean': bool$1},
+  stackSubgroups: { 'boolean': bool$1},
+  cluster: {
+    maxItems: {'number': number$1, 'undefined': 'undefined'},
+    titleTemplate: {'string': string$1, 'undefined': 'undefined'},
     clusterCriteria: { 'function': 'function', 'undefined': 'undefined'},
-    showStipes: {'boolean': bool, 'undefined': 'undefined'},
-    fitOnDoubleClick: {'boolean': bool, 'undefined': 'undefined'},
-    __type__: {'boolean': bool, object}
+    showStipes: {'boolean': bool$1, 'undefined': 'undefined'},
+    fitOnDoubleClick: {'boolean': bool$1, 'undefined': 'undefined'},
+    __type__: {'boolean': bool$1, object: object$1}
   },
   snap: {'function': 'function', 'null': 'null'},
-  start: {date, number, string, moment: moment$1},
+  start: {date: date$1, number: number$1, string: string$1, moment: moment$1},
   template: {'function': 'function'},
   loadingScreenTemplate: {'function': 'function'},
   groupTemplate: {'function': 'function'},
-  visibleFrameTemplate: {string, 'function': 'function'},
-  showTooltips: { 'boolean': bool},
+  visibleFrameTemplate: {string: string$1, 'function': 'function'},
+  showTooltips: { 'boolean': bool$1},
   tooltip: {
-    followMouse: { 'boolean': bool },
+    followMouse: { 'boolean': bool$1 },
     overflowMethod: { 'string': ['cap', 'flip', 'none'] },
-    delay: {number},
+    delay: {number: number$1},
     template: {'function': 'function'},
-    __type__: {object}
+    __type__: {object: object$1}
   },
   tooltipOnItemUpdateTime: {
     template: {'function': 'function'},
-    __type__: { 'boolean': bool, object}
+    __type__: { 'boolean': bool$1, object: object$1}
   },
   timeAxis: {
-    scale: {string,'undefined': 'undefined'},
-    step: {number,'undefined': 'undefined'},
-    __type__: {object}
+    scale: {string: string$1,'undefined': 'undefined'},
+    step: {number: number$1,'undefined': 'undefined'},
+    __type__: {object: object$1}
   },
-  type: {string},
-  width: {string, number},
-  preferZoom: { 'boolean': bool},
-  zoomable: { 'boolean': bool},
+  type: {string: string$1},
+  width: {string: string$1, number: number$1},
+  preferZoom: { 'boolean': bool$1},
+  zoomable: { 'boolean': bool$1},
   zoomKey: {string: ['ctrlKey', 'altKey', 'shiftKey', 'metaKey', '']},
-  zoomFriction: {number},
-  zoomMax: {number},
-  zoomMin: {number},
-
-  __type__: {object}
+  zoomFriction: {number: number$1},
+  zoomMax: {number: number$1},
+  zoomMin: {number: number$1},
+  xss: {
+    disabled: { boolean: bool$1 },
+    filterOptions: {
+      __any__: { any: any$1 },
+      __type__: { object: object$1 }
+    },
+    __type__: { object: object$1 }
+  },
+  __type__: {object: object$1}
 };
 
-let configureOptions = {
+let configureOptions$1 = {
   global: {
     align:  ['center', 'left', 'right'],
     alignCurrentTime: ['none', 'year', 'month', 'quarter', 'week', 'isoWeek', 'day', 'date', 'hour', 'minute', 'second'],
@@ -13192,7 +13468,8 @@ let configureOptions = {
     zoomable: true,
     zoomKey: ['ctrlKey', 'altKey', 'shiftKey', 'metaKey', ''],
     zoomMax: [315360000000000, 10, 315360000000000, 1],
-    zoomMin: [10, 10, 315360000000000, 1]
+    zoomMin: [10, 10, 315360000000000, 1],
+    xss: { disabled: false }
   }
 };
 
@@ -13306,17 +13583,17 @@ class ColorPicker {
     }
 
     // check format
-    if (util.isString(color) === true) {
-      if (util.isValidRGB(color) === true) {
+    if (availableUtils.isString(color) === true) {
+      if (availableUtils.isValidRGB(color) === true) {
         let rgbaArray = color.substr(4).substr(0, color.length - 5).split(',');
         rgba = {r:rgbaArray[0], g:rgbaArray[1], b:rgbaArray[2], a:1.0};
       }
-      else if (util.isValidRGBA(color) === true) {
+      else if (availableUtils.isValidRGBA(color) === true) {
         let rgbaArray = color.substr(5).substr(0, color.length - 6).split(',');
         rgba = {r:rgbaArray[0], g:rgbaArray[1], b:rgbaArray[2], a:rgbaArray[3]};
       }
-      else if (util.isValidHex(color) === true) {
-        let rgbObj = util.hexToRGB(color);
+      else if (availableUtils.isValidHex(color) === true) {
+        let rgbObj = availableUtils.hexToRGB(color);
         rgba = {r:rgbObj.r, g:rgbObj.g, b:rgbObj.b, a:1.0};
       }
     }
@@ -13365,7 +13642,7 @@ class ColorPicker {
   _hide(storePrevious = true) {
     // store the previous color for next time;
     if (storePrevious === true) {
-      this.previousColor = util.extend({}, this.color);
+      this.previousColor = availableUtils.extend({}, this.color);
     }
 
     if (this.applied === true) {
@@ -13430,11 +13707,11 @@ class ColorPicker {
   _setColor(rgba, setInitial = true) {
     // store the initial color
     if (setInitial === true) {
-      this.initialColor = util.extend({}, rgba);
+      this.initialColor = availableUtils.extend({}, rgba);
     }
 
     this.color = rgba;
-    let hsv = util.RGBToHSV(rgba.r, rgba.g, rgba.b);
+    let hsv = availableUtils.RGBToHSV(rgba.r, rgba.g, rgba.b);
 
     let angleConvert = 2 * Math.PI;
     let radius = this.r * hsv.s;
@@ -13465,9 +13742,9 @@ class ColorPicker {
    * @private
    */
   _setBrightness(value) {
-    let hsv = util.RGBToHSV(this.color.r, this.color.g, this.color.b);
+    let hsv = availableUtils.RGBToHSV(this.color.r, this.color.g, this.color.b);
     hsv.v = value / 100;
-    let rgba = util.HSVToRGB(hsv.h, hsv.s, hsv.v);
+    let rgba = availableUtils.HSVToRGB(hsv.h, hsv.s, hsv.v);
     rgba['a'] = this.color.a;
     this.color = rgba;
     this._updatePicker();
@@ -13480,7 +13757,7 @@ class ColorPicker {
    * @private
    */
   _updatePicker(rgba = this.color) {
-    let hsv = util.RGBToHSV(rgba.r, rgba.g, rgba.b);
+    let hsv = availableUtils.RGBToHSV(rgba.r, rgba.g, rgba.b);
     let ctx = this.colorPickerCanvas.getContext('2d');
     if (this.pixelRation === undefined) {
       this.pixelRatio = (window.devicePixelRatio || 1) / (ctx.webkitBackingStorePixelRatio ||
@@ -13703,7 +13980,7 @@ class ColorPicker {
         for (sat = 0; sat < this.r; sat++) {
           x = this.centerCoordinates.x + sat * Math.sin(angleConvert * hue);
           y = this.centerCoordinates.y + sat * Math.cos(angleConvert * hue);
-          rgb = util.HSVToRGB(hue * hfac, sat * sfac, 1);
+          rgb = availableUtils.HSVToRGB(hue * hfac, sat * sfac, 1);
           ctx.fillStyle = 'rgb(' + rgb.r + ',' + rgb.g + ',' + rgb.b + ')';
           ctx.fillRect(x - 0.5, y - 0.5, 2, 2);
         }
@@ -13748,10 +14025,10 @@ class ColorPicker {
     let h = angle / (2 * Math.PI);
     h = h < 0 ? h + 1 : h;
     let s = radius / this.r;
-    let hsv = util.RGBToHSV(this.color.r, this.color.g, this.color.b);
+    let hsv = availableUtils.RGBToHSV(this.color.r, this.color.g, this.color.b);
     hsv.h = h;
     hsv.s = s;
-    let rgba = util.HSVToRGB(hsv.h, hsv.s, hsv.v);
+    let rgba = availableUtils.HSVToRGB(hsv.h, hsv.s, hsv.v);
     rgba['a'] = this.color.a;
     this.color = rgba;
 
@@ -13792,7 +14069,7 @@ class Configurator {
       container: undefined,
       showButton: true
     };
-    util.extend(this.options, this.defaultOptions);
+    availableUtils.extend(this.options, this.defaultOptions);
 
     this.configureOptions = configureOptions;
     this.moduleOptions = {};
@@ -13821,7 +14098,7 @@ class Configurator {
       if (typeof options === 'string') {
         this.options.filter = options;
       }
-      else if (options instanceof Array) {
+      else if (Array.isArray(options)) {
         this.options.filter = options.join();
       }
       else if (typeof options === 'object') {
@@ -14003,7 +14280,7 @@ class Configurator {
   _makeHeader(name) {
     let div = document.createElement('div');
     div.className = 'vis-configuration vis-config-header';
-    div.innerHTML = name;
+    div.innerHTML = availableUtils.xss(name);
     this._makeItem([],div);
   }
 
@@ -14020,10 +14297,10 @@ class Configurator {
     let div = document.createElement('div');
     div.className = 'vis-configuration vis-config-label vis-config-s' + path.length;
     if (objectLabel === true) {
-      div.innerHTML = '<i><b>' + name + ':</b></i>';
+      div.innerHTML = availableUtils.xss('<i><b>' + name + ':</b></i>');
     }
     else {
-      div.innerHTML = name + ':';
+      div.innerHTML = availableUtils.xss(name + ':');
     }
     return div;
   }
@@ -14165,7 +14442,7 @@ class Configurator {
       let div = document.createElement("div");
       div.id = "vis-configuration-popup";
       div.className = "vis-configuration-popup";
-      div.innerHTML = string;
+      div.innerHTML = availableUtils.xss(string);
       div.onclick = () => {this._removePopup();};
       this.popupCounter += 1;
       this.popupDiv = {html:div, index:index};
@@ -14340,13 +14617,13 @@ class Configurator {
       if (obj.hasOwnProperty(subObj)) {
         show = true;
         let item = obj[subObj];
-        let newPath = util.copyAndExtendArray(path, subObj);
+        let newPath = availableUtils.copyAndExtendArray(path, subObj);
         if (typeof filter === 'function') {
           show = filter(subObj,path);
 
           // if needed we must go deeper into the object.
           if (show === false) {
-            if (!(item instanceof Array) && typeof item !== 'string' && typeof item !== 'boolean' && item instanceof Object) {
+            if (!Array.isArray(item) && typeof item !== 'string' && typeof item !== 'boolean' && item instanceof Object) {
               this.allowCreation = false;
               show = this._handleObject(item, newPath, true);
               this.allowCreation = checkOnly === false;
@@ -14358,7 +14635,7 @@ class Configurator {
           visibleInSet = true;
           let value = this._getValue(newPath);
 
-          if (item instanceof Array) {
+          if (Array.isArray(item)) {
             this._handleArray(item, value, newPath);
           }
           else if (typeof item === 'string') {
@@ -14379,7 +14656,7 @@ class Configurator {
             if (draw === true) {
               // initially collapse options with an disabled enabled option.
               if (item.enabled !== undefined) {
-                let enabledPath = util.copyAndExtendArray(newPath, 'enabled');
+                let enabledPath = availableUtils.copyAndExtendArray(newPath, 'enabled');
                 let enabledValue = this._getValue(enabledPath);
                 if (enabledValue === true) {
                   let label = this._makeLabel(subObj, newPath, true);
@@ -14522,7 +14799,7 @@ class Timeline extends Core {
     }
 
     // if the third element is options, the forth is groups (optionally);
-    if (!(Array.isArray(groups) || groups instanceof DataSet || groups instanceof DataView) && groups instanceof Object) {
+    if (!(Array.isArray(groups) || isDataViewLike(groups)) && groups instanceof Object) {
       const forthArgument = options;
       options = groups;
       groups = forthArgument;
@@ -14542,9 +14819,10 @@ class Timeline extends Core {
         axis: 'bottom',   // axis orientation: 'bottom', 'top', or 'both'
         item: 'bottom'    // not relevant
       },
-      moment,
+      moment: moment$3,
     };
-    this.options = util.deepExtend({}, this.defaultOptions);
+    this.options = availableUtils.deepExtend({}, this.defaultOptions);
+    options && availableUtils.setupXSSProtection(options.xss);
 
     // Create the DOM, props, and emitter
     this._create(container);
@@ -14581,7 +14859,7 @@ class Timeline extends Core {
           loadingScreenFragment.appendChild(loadingScreen);
         }
         else if (loadingScreen != undefined) {
-          loadingScreenFragment.innerHTML = loadingScreen;
+          loadingScreenFragment.innerHTML = availableUtils.xss(loadingScreen);
         }
       }
     }
@@ -14696,7 +14974,7 @@ class Timeline extends Core {
         }
       }
 
-      if (!me.initialDrawDone && (me.initialRangeChangeDone || (!me.options.start && !me.options.end) 
+      if (!me.initialDrawDone && (me.initialRangeChangeDone || (!me.options.start && !me.options.end)
         || me.options.rollingMode)) {
         me.initialDrawDone = true;
         me.itemSet.initialDrawDone = true;
@@ -14744,7 +15022,7 @@ class Timeline extends Core {
    * @private
    */
   _createConfigurator() {
-    return new Configurator(this, this.dom.container, configureOptions);
+    return new Configurator(this, this.dom.container, configureOptions$1);
   }
 
   /**
@@ -14795,13 +15073,13 @@ class Timeline extends Core {
    */
   setItems(items) {
     this.itemsDone = false;
-    
+
     // convert to type DataSet when needed
     let newDataSet;
     if (!items) {
       newDataSet = null;
     }
-    else if (items instanceof DataSet || items instanceof DataView) {
+    else if (isDataViewLike(items)) {
       newDataSet = typeCoerceDataSet(items);
     }
     else {
@@ -14825,18 +15103,16 @@ class Timeline extends Core {
   setGroups(groups) {
     // convert to type DataSet when needed
     let newDataSet;
+    const filter = group => group.visible !== false;
+
     if (!groups) {
       newDataSet = null;
     }
     else {
-      const filter = group => group.visible !== false;
-      if (groups instanceof DataSet || groups instanceof DataView) {
-        newDataSet = new DataView(groups,{filter});
-      }
-      else {
-        // turn an array into a dataset
-        newDataSet = new DataSet(groups.filter(filter));
-      }
+      // If groups is array, turn to DataSet & build dataview from that
+      if (Array.isArray(groups)) groups = new DataSet(groups);
+
+      newDataSet = new DataView(groups,{filter});
     }
 
     // This looks weird but it's necessary to prevent memory leaks.
@@ -14850,7 +15126,7 @@ class Timeline extends Core {
     // method. Even if the original is a DataView already a new one has been
     // created and assigned to `this.groupsData`. In case this changes in the
     // future it will be necessary to rework this!!!!
-    if (this.groupsData instanceof DataView) {
+    if (this.groupsData != null && typeof this.groupsData.setData === "function") {
       this.groupsData.setData(null);
     }
     this.groupsData = newDataSet;
@@ -14970,7 +15246,7 @@ class Timeline extends Core {
           // The redraw shifted elements, so reset the animation to correct
           initialVerticalScroll = verticalScroll;
           startPos = me._getScrollTop() * -1;
-        }      
+        }
 
         const from = startPos;
         const to = initialVerticalScroll.scrollOffset;
@@ -14999,7 +15275,7 @@ class Timeline extends Core {
         // Double check we ended at the proper scroll position
         setFinalVerticalPosition();
 
-        // Let the redraw settle and finalize the position.      
+        // Let the redraw settle and finalize the position.
         setTimeout(setFinalVerticalPosition, 100);
       };
 
@@ -15015,7 +15291,7 @@ class Timeline extends Core {
         initialVerticalScroll = { shouldScroll: false, scrollOffset: -1, itemTop: -1 };
       }
 
-      this.range.setRange(middle - interval / 2, middle + interval / 2, { animation }, finalVerticalCallback, verticalAnimationFrame);  
+      this.range.setRange(middle - interval / 2, middle + interval / 2, { animation }, finalVerticalCallback, verticalAnimationFrame);
     }
   }
 
@@ -15071,7 +15347,7 @@ class Timeline extends Core {
       let redrawQueueLength = 0;
 
       // collect redraw functions
-      util.forEach(this.itemSet.items, (item, key) => {
+      availableUtils.forEach(this.itemSet.items, (item, key) => {
         if (item.groupShowing) {
           const returnQueue = true;
           redrawQueue[key] = item.redraw(returnQueue);
@@ -15083,14 +15359,14 @@ class Timeline extends Core {
       if (needRedraw) {
         // redraw all regular items
         for (let i = 0; i < redrawQueueLength; i++) {
-          util.forEach(redrawQueue, fns => {
+          availableUtils.forEach(redrawQueue, fns => {
             fns[i]();
           });
         }
       }
 
        // calculate the date of the left side and right side of the items given
-      util.forEach(this.itemSet.items, item => {
+      availableUtils.forEach(this.itemSet.items, item => {
         const start = getStart(item);
         const end = getEnd(item);
         let startSide;
@@ -15147,8 +15423,8 @@ class Timeline extends Core {
 
     if (this.itemsData) {
       this.itemsData.forEach(item => {
-        const start = util.convert(item.start, 'Date').valueOf();
-        const end   = util.convert(item.end != undefined ? item.end : item.start, 'Date').valueOf();
+        const start = availableUtils.convert(item.start, 'Date').valueOf();
+        const end   = availableUtils.convert(item.end != undefined ? item.end : item.start, 'Date').valueOf();
         if (min === null || start < min) {
           min = start;
         }
@@ -15176,7 +15452,7 @@ class Timeline extends Core {
     const centerContainerRect = this.dom.centerContainer.getBoundingClientRect();
     const x = this.options.rtl ? centerContainerRect.right - clientX : clientX - centerContainerRect.left;
     const y = clientY - centerContainerRect.top;
-    
+
     const item  = this.itemSet.itemFromTarget(event);
     const group = this.itemSet.groupFromTarget(event);
     const customTime = CustomTime.customTimeFromTarget(event);
@@ -15187,15 +15463,15 @@ class Timeline extends Core {
     const time = this._toTime(x);
     const snappedTime = snap ? snap(time, scale, step) : time;
 
-    const element = util.getTarget(event);
+    const element = availableUtils.getTarget(event);
     let what = null;
     if (item != null)                                                    {what = 'item';}
     else if (customTime != null)                                         {what = 'custom-time';}
-    else if (util.hasParent(element, this.timeAxis.dom.foreground))      {what = 'axis';}
-    else if (this.timeAxis2 && util.hasParent(element, this.timeAxis2.dom.foreground)) {what = 'axis';}
-    else if (util.hasParent(element, this.itemSet.dom.labelSet))         {what = 'group-label';}
-    else if (util.hasParent(element, this.currentTime.bar))              {what = 'current-time';}
-    else if (util.hasParent(element, this.dom.center))                   {what = 'background';}
+    else if (availableUtils.hasParent(element, this.timeAxis.dom.foreground))      {what = 'axis';}
+    else if (this.timeAxis2 && availableUtils.hasParent(element, this.timeAxis2.dom.foreground)) {what = 'axis';}
+    else if (availableUtils.hasParent(element, this.itemSet.dom.labelSet))         {what = 'group-label';}
+    else if (availableUtils.hasParent(element, this.currentTime.bar))              {what = 'current-time';}
+    else if (availableUtils.hasParent(element, this.dom.center))                   {what = 'background';}
 
     return {
       event,
@@ -15261,7 +15537,7 @@ class Timeline extends Core {
  * @returns {number}
  */
 function getStart(item) {
-  return util.convert(item.data.start, 'Date').valueOf()
+  return availableUtils.convert(item.data.start, 'Date').valueOf()
 }
 
 /**
@@ -15271,7 +15547,7 @@ function getStart(item) {
  */
 function getEnd(item) {
   const end = item.data.end != undefined ? item.data.end : item.data.start;
-  return util.convert(end, 'Date').valueOf();
+  return availableUtils.convert(end, 'Date').valueOf();
 }
 
 /**
@@ -15287,12 +15563,12 @@ function getItemVerticalScroll(timeline, item) {
 
   const itemsetHeight = timeline.options.rtl ? timeline.props.rightContainer.height : timeline.props.leftContainer.height;
   const contentHeight = timeline.props.center.height;
-  
+
   const group = item.parent;
   let offset = group.top;
   let shouldScroll = true;
   const orientation = timeline.timeAxis.options.orientation.axis;
-  
+
   const itemTop = () => {
   if (orientation == "bottom") {
       return group.height - item.top - item.height;
@@ -15920,7 +16196,7 @@ class DataAxis extends Component {
     this.scale = undefined;
     this.range = {start: 0, end: 0};
 
-    this.options = util.extend({}, this.defaultOptions);
+    this.options = availableUtils.extend({}, this.defaultOptions);
     this.conversionFactor = 1;
 
     this.setOptions(options);
@@ -16016,7 +16292,7 @@ class DataAxis extends Component {
         'right',
         'alignZeros'
       ];
-      util.selectiveDeepExtend(fields, this.options, options);
+      availableUtils.selectiveDeepExtend(fields, this.options, options);
 
       this.minWidth = Number((`${this.options.width}`).replace("px", ""));
       if (redraw === true && this.dom.frame) {
@@ -16360,7 +16636,7 @@ class DataAxis extends Component {
     // reuse redundant label
     const label = getDOMElement('div', this.DOMelements.labels, this.dom.frame); //this.dom.redundant.labels.shift();
     label.className = className;
-    label.innerHTML = text;
+    label.innerHTML = availableUtils.xss(text);
     if (orientation === 'left') {
       label.style.left = `-${this.options.labelOffsetX}px`;
       label.style.textAlign = "right";
@@ -16418,11 +16694,11 @@ class DataAxis extends Component {
     if (this.options[orientation].title !== undefined && this.options[orientation].title.text !== undefined) {
       const title = getDOMElement('div', this.DOMelements.title, this.dom.frame);
       title.className = `vis-y-axis vis-title vis-${orientation}`;
-      title.innerHTML = this.options[orientation].title.text;
+      title.innerHTML = availableUtils.xss(this.options[orientation].title.text);
 
       // Add style - if provided
       if (this.options[orientation].title.style !== undefined) {
-        util.addCssText(title, this.options[orientation].title.style);
+        availableUtils.addCssText(title, this.options[orientation].title.style);
       }
 
       if (orientation === 'left') {
@@ -17175,7 +17451,7 @@ Line._linear = function (data) {
 function GraphGroup(group, groupId, options, groupsUsingDefaultStyles) {
   this.id = groupId;
   var fields = ['sampling', 'style', 'sort', 'yAxisOrientation', 'barChart', 'drawPoints', 'shaded', 'interpolation', 'zIndex','excludeFromStacking', 'excludeFromLegend'];
-  this.options = util.selectiveBridgeObject(fields, options);
+  this.options = availableUtils.selectiveBridgeObject(fields, options);
   this.usingDefaultStyle = group.className === undefined;
   this.groupsUsingDefaultStyles = groupsUsingDefaultStyles;
   this.zeroPosition = 0;
@@ -17195,7 +17471,7 @@ GraphGroup.prototype.setItems = function (items) {
   if (items != null) {
     this.itemsData = items;
     if (this.options.sort == true) {
-      util.insertSort(this.itemsData,function (a, b) {
+      availableUtils.insertSort(this.itemsData,function (a, b) {
         return a.x > b.x ? 1 : -1;
       });
     }
@@ -17224,7 +17500,7 @@ GraphGroup.prototype.setZeroPosition = function (pos) {
 GraphGroup.prototype.setOptions = function (options) {
   if (options !== undefined) {
     var fields = ['sampling', 'style', 'sort', 'yAxisOrientation', 'barChart', 'zIndex','excludeFromStacking', 'excludeFromLegend'];
-    util.selectiveDeepExtend(fields, this.options, options);
+    availableUtils.selectiveDeepExtend(fields, this.options, options);
 
     // if the group's drawPoints is a function delegate the callback to the onRender property
     if (typeof options.drawPoints == 'function') {
@@ -17233,9 +17509,9 @@ GraphGroup.prototype.setOptions = function (options) {
       };
     }
 
-    util.mergeOptions(this.options, options, 'interpolation');
-    util.mergeOptions(this.options, options, 'drawPoints');
-    util.mergeOptions(this.options, options, 'shaded');
+    availableUtils.mergeOptions(this.options, options, 'interpolation');
+    availableUtils.mergeOptions(this.options, options, 'drawPoints');
+    availableUtils.mergeOptions(this.options, options, 'shaded');
 
     if (options.interpolation) {
       if (typeof options.interpolation == 'object') {
@@ -17344,7 +17620,7 @@ function Legend(body, options, side, linegraphOptions) {
   };
 
   this.side = side;
-  this.options = util.extend({}, this.defaultOptions);
+  this.options = availableUtils.extend({}, this.defaultOptions);
   this.linegraphOptions = linegraphOptions;
 
   this.svgElements = {};
@@ -17430,7 +17706,7 @@ Legend.prototype.show = function() {
 
 Legend.prototype.setOptions = function(options) {
   var fields = ['enabled','orientation','icons','left','right'];
-  util.selectiveDeepExtend(fields, this.options, options);
+  availableUtils.selectiveDeepExtend(fields, this.options, options);
 };
 
 Legend.prototype.redraw = function() {
@@ -17499,7 +17775,7 @@ Legend.prototype.redraw = function() {
         content += this.groups[groupId].content + '<br />';
       }
     }
-    this.dom.textArea.innerHTML = content;
+    this.dom.textArea.innerHTML = availableUtils.xss(content);
     this.dom.textArea.style.lineHeight = ((0.75 * this.options.iconSize) + this.options.iconSpacing) + 'px';
   }
 };
@@ -17533,7 +17809,7 @@ Legend.prototype.drawLegendIcons = function() {
   }
 };
 
-var UNGROUPED$3 = '__ungrouped__'; // reserved group id for ungrouped items
+var UNGROUPED = '__ungrouped__'; // reserved group id for ungrouped items
 
 /**
  * This is the constructor of the LineGraph. It requires a Timeline body and options.
@@ -17582,7 +17858,7 @@ function LineGraph(body, options) {
   };
 
   // options is shared by this lineGraph and all its items
-  this.options = util.extend({}, this.defaultOptions);
+  this.options = availableUtils.extend({}, this.defaultOptions);
   this.dom = {};
   this.props = {};
   this.hammer = null;
@@ -17631,8 +17907,7 @@ function LineGraph(body, options) {
   this.setOptions(options);
   this.groupsUsingDefaultStyles = [0];
   this.body.emitter.on('rangechanged', function () {
-    me.lastStart = me.body.range.start;
-    me.svg.style.left = util.option.asSize(-me.props.width);
+    me.svg.style.left = availableUtils.option.asSize(-me.props.width);
 
     me.forceGraphUpdate = true;
     //Is this local redraw necessary? (Core also does a change event!)
@@ -17692,11 +17967,11 @@ LineGraph.prototype.setOptions = function (options) {
         this.updateSVGheight = true;
       }
     }
-    util.selectiveDeepExtend(fields, this.options, options);
-    util.mergeOptions(this.options, options, 'interpolation');
-    util.mergeOptions(this.options, options, 'drawPoints');
-    util.mergeOptions(this.options, options, 'shaded');
-    util.mergeOptions(this.options, options, 'legend');
+    availableUtils.selectiveDeepExtend(fields, this.options, options);
+    availableUtils.mergeOptions(this.options, options, 'interpolation');
+    availableUtils.mergeOptions(this.options, options, 'drawPoints');
+    availableUtils.mergeOptions(this.options, options, 'shaded');
+    availableUtils.mergeOptions(this.options, options, 'legend');
 
     if (options.interpolation) {
       if (typeof options.interpolation == 'object') {
@@ -17729,8 +18004,8 @@ LineGraph.prototype.setOptions = function (options) {
       }
     }
 
-    if (this.groups.hasOwnProperty(UNGROUPED$3)) {
-      this.groups[UNGROUPED$3].setOptions(options);
+    if (this.groups.hasOwnProperty(UNGROUPED)) {
+      this.groups[UNGROUPED].setOptions(options);
     }
   }
 
@@ -17776,16 +18051,16 @@ LineGraph.prototype.setItems = function (items) {
   if (!items) {
     this.itemsData = null;
   }
-  else if (items instanceof DataSet || items instanceof DataView) {
+  else if (isDataViewLike(items)) {
     this.itemsData = typeCoerceDataSet(items);
   }
   else {
-    throw new TypeError('Data must be an instance of DataSet or DataView');
+    throw new TypeError('Data must implement the interface of DataSet or DataView');
   }
 
   if (oldItemsData) {
     // unsubscribe from old dataset
-    util.forEach(this.itemListeners, function (callback, event) {
+    availableUtils.forEach(this.itemListeners, function (callback, event) {
       oldItemsData.off(event, callback);
     });
 
@@ -17800,7 +18075,7 @@ LineGraph.prototype.setItems = function (items) {
   if (this.itemsData) {
     // subscribe to new dataset
     var id = this.id;
-    util.forEach(this.itemListeners, function (callback, event) {
+    availableUtils.forEach(this.itemListeners, function (callback, event) {
       me.itemsData.on(event, callback, id);
     });
 
@@ -17821,7 +18096,7 @@ LineGraph.prototype.setGroups = function (groups) {
 
   // unsubscribe from current dataset
   if (this.groupsData) {
-    util.forEach(this.groupListeners, function (callback, event) {
+    availableUtils.forEach(this.groupListeners, function (callback, event) {
       me.groupsData.off(event, callback);
     });
 
@@ -17837,17 +18112,17 @@ LineGraph.prototype.setGroups = function (groups) {
   if (!groups) {
     this.groupsData = null;
   }
-  else if (groups instanceof DataSet || groups instanceof DataView) {
+  else if (isDataViewLike(groups)) {
     this.groupsData = groups;
   }
   else {
-    throw new TypeError('Data must be an instance of DataSet or DataView');
+    throw new TypeError('Data must implement the interface of DataSet or DataView');
   }
 
   if (this.groupsData) {
     // subscribe to new dataset
     var id = this.id;
-    util.forEach(this.groupListeners, function (callback, event) {
+    availableUtils.forEach(this.groupListeners, function (callback, event) {
       me.groupsData.on(event, callback, id);
     });
 
@@ -17973,7 +18248,7 @@ LineGraph.prototype._updateAllGroupData = function (ids, groupIds) {
       var item = items[i];
       var groupId = item.group;
       if (groupId === null || groupId === undefined) {
-        groupId = UNGROUPED$3;
+        groupId = UNGROUPED;
       }
       groupCounts.hasOwnProperty(groupId) ? groupCounts[groupId]++ : groupCounts[groupId] = 1;
     }
@@ -18004,7 +18279,7 @@ LineGraph.prototype._updateAllGroupData = function (ids, groupIds) {
       item = items[i];
       groupId = item.group;
       if (groupId === null || groupId === undefined) {
-        groupId = UNGROUPED$3;
+        groupId = UNGROUPED;
       }
       if (!groupIds && ids && (item[fieldId] !== idMap[item[fieldId]]) && existingItemsMap.hasOwnProperty(item[fieldId])) {
         continue;
@@ -18013,9 +18288,9 @@ LineGraph.prototype._updateAllGroupData = function (ids, groupIds) {
         groupsContent[groupId] = new Array(groupCounts[groupId]);
       }
       //Copy data (because of unmodifiable DataView input.
-      var extended = util.bridgeObject(item);
-      extended.x = util.convert(item.x, 'Date');
-      extended.end = util.convert(item.end, 'Date');
+      var extended = availableUtils.bridgeObject(item);
+      extended.x = availableUtils.convert(item.x, 'Date');
+      extended.end = availableUtils.convert(item.end, 'Date');
       extended.orginalY = item.y; //real Y
       extended.y = Number(item.y);
       extended[fieldId] = item[fieldId];
@@ -18083,8 +18358,8 @@ LineGraph.prototype.redraw = function () {
   // the svg element is three times as big as the width, this allows for fully dragging left and right
   // without reloading the graph. the controls for this are bound to events in the constructor
   if (resized == true) {
-    this.svg.style.width = util.option.asSize(3 * this.props.width);
-    this.svg.style.left = util.option.asSize(-this.props.width);
+    this.svg.style.width = availableUtils.option.asSize(3 * this.props.width);
+    this.svg.style.left = availableUtils.option.asSize(-this.props.width);
 
     // if the height of the graph is set as proportional, change the height of the svg
     if ((this.options.height + '').indexOf("%") != -1 || this.updateSVGheightOnResize == true) {
@@ -18108,6 +18383,8 @@ LineGraph.prototype.redraw = function () {
   if (resized == true || zoomed == true || this.abortedGraphUpdate == true || this.forceGraphUpdate == true) {
     resized = this._updateGraph() || resized;
     this.forceGraphUpdate = false;
+    this.lastStart = this.body.range.start;
+    this.svg.style.left = (-this.props.width) + 'px';
   }
   else {
     // move the whole svg while dragging
@@ -18138,7 +18415,7 @@ LineGraph.prototype._getSortedGroupIds = function(){
       }
     }
   }
-  util.insertSort(grouplist,function(a,b){
+  availableUtils.insertSort(grouplist,function(a,b){
     var az = a.zIndex;
     var bz = b.zIndex;
     if (az === undefined) az=0;
@@ -18355,8 +18632,8 @@ LineGraph.prototype._getRelevantData = function (groupIds, groupsData, minDate, 
         var dateComparator = function (a, b) {
           return a.getTime() == b.getTime() ? 0 : a < b ? -1 : 1
         };
-        var first = Math.max(0, util.binarySearchValue(itemsData, minDate, 'x', 'before', dateComparator));
-        var last = Math.min(itemsData.length, util.binarySearchValue(itemsData, maxDate, 'x', 'after', dateComparator) + 1);
+        var first = Math.max(0, availableUtils.binarySearchValue(itemsData, minDate, 'x', 'before', dateComparator));
+        var last = Math.min(itemsData.length, availableUtils.binarySearchValue(itemsData, maxDate, 'x', 'after', dateComparator) + 1);
         if (last <= 0) {
           last = itemsData.length;
         }
@@ -18628,176 +18905,177 @@ LineGraph.prototype._convertYcoordinates = function (datapoints, group) {
  * __any__ means that the name of the property does not matter.
  * __type__ is a required field for all objects and contains the allowed types of all objects
  */
-let string$1 = 'string';
-let bool$1 = 'boolean';
-let number$1 = 'number';
-let array$1 = 'array';
-let date$1 = 'date';
-let object$1 = 'object'; // should only be in a __type__ property
-let dom$1 = 'dom';
-let moment$2 = 'moment';
-let any$1 = 'any';
+let string = 'string';
+let bool = 'boolean';
+let number = 'number';
+let array = 'array';
+let date = 'date';
+let object = 'object'; // should only be in a __type__ property
+let dom = 'dom';
+let moment = 'moment';
+let any = 'any';
 
 
-let allOptions$2 = {
+let allOptions = {
   configure: {
-    enabled: {'boolean': bool$1},
-    filter: {'boolean': bool$1,'function': 'function'},
-    container: {dom: dom$1},
-    __type__: {object: object$1,'boolean': bool$1,'function': 'function'}
+    enabled: {'boolean': bool},
+    filter: {'boolean': bool,'function': 'function'},
+    container: {dom},
+    __type__: {object,'boolean': bool,'function': 'function'}
   },
 
   //globals :
-  alignCurrentTime: {string: string$1, 'undefined': 'undefined'},  
+  alignCurrentTime: {string, 'undefined': 'undefined'},  
   yAxisOrientation: {string:['left','right']},
-  defaultGroup: {string: string$1},
-  sort: {'boolean': bool$1},
-  sampling: {'boolean': bool$1},
-  stack:{'boolean': bool$1},
-  graphHeight: {string: string$1, number: number$1},
+  defaultGroup: {string},
+  sort: {'boolean': bool},
+  sampling: {'boolean': bool},
+  stack:{'boolean': bool},
+  graphHeight: {string, number},
   shaded: {
-    enabled: {'boolean': bool$1},
+    enabled: {'boolean': bool},
     orientation: {string:['bottom','top','zero','group']}, // top, bottom, zero, group
-    groupId: {object: object$1},
-    __type__: {'boolean': bool$1,object: object$1}
+    groupId: {object},
+    __type__: {'boolean': bool,object}
   },
   style: {string:['line','bar','points']}, // line, bar
   barChart: {
-    width: {number: number$1},
-    minWidth: {number: number$1},
-    sideBySide: {'boolean': bool$1},
+    width: {number},
+    minWidth: {number},
+    sideBySide: {'boolean': bool},
     align: {string:['left','center','right']},
-    __type__: {object: object$1}
+    __type__: {object}
   },
   interpolation: {
-    enabled: {'boolean': bool$1},
+    enabled: {'boolean': bool},
     parametrization: {string:['centripetal', 'chordal','uniform']}, // uniform (alpha = 0.0), chordal (alpha = 1.0), centripetal (alpha = 0.5)
-    alpha: {number: number$1},
-    __type__: {object: object$1,'boolean': bool$1}
+    alpha: {number},
+    __type__: {object,'boolean': bool}
   },
   drawPoints: {
-    enabled: {'boolean': bool$1},
+    enabled: {'boolean': bool},
     onRender: { 'function': 'function' },
-    size: {number: number$1},
+    size: {number},
     style: {string:['square','circle']}, // square, circle
-    __type__: {object: object$1,'boolean': bool$1,'function': 'function'}
+    __type__: {object,'boolean': bool,'function': 'function'}
   },
   dataAxis: {
-    showMinorLabels: {'boolean': bool$1},
-    showMajorLabels: {'boolean': bool$1},
-    showWeekScale: {'boolean': bool$1},
-    icons: {'boolean': bool$1},
-    width: {string: string$1, number: number$1},
-    visible: {'boolean': bool$1},
-    alignZeros: {'boolean': bool$1},
+    showMinorLabels: {'boolean': bool},
+    showMajorLabels: {'boolean': bool},
+    showWeekScale: {'boolean': bool},
+    icons: {'boolean': bool},
+    width: {string, number},
+    visible: {'boolean': bool},
+    alignZeros: {'boolean': bool},
     left:{
-      range: {min:{number: number$1,'undefined': 'undefined'},max:{number: number$1,'undefined': 'undefined'},__type__: {object: object$1}},
+      range: {min:{number,'undefined': 'undefined'},max:{number,'undefined': 'undefined'},__type__: {object}},
       format: {'function': 'function'},
-      title: {text:{string: string$1,number: number$1,'undefined': 'undefined'},style:{string: string$1,'undefined': 'undefined'},__type__: {object: object$1}},
-      __type__: {object: object$1}
+      title: {text:{string,number,'undefined': 'undefined'},style:{string,'undefined': 'undefined'},__type__: {object}},
+      __type__: {object}
     },
     right:{
-      range: {min:{number: number$1,'undefined': 'undefined'},max:{number: number$1,'undefined': 'undefined'},__type__: {object: object$1}},
+      range: {min:{number,'undefined': 'undefined'},max:{number,'undefined': 'undefined'},__type__: {object}},
       format: {'function': 'function'},
-      title: {text:{string: string$1,number: number$1,'undefined': 'undefined'},style:{string: string$1,'undefined': 'undefined'},__type__: {object: object$1}},
-      __type__: {object: object$1}
+      title: {text:{string,number,'undefined': 'undefined'},style:{string,'undefined': 'undefined'},__type__: {object}},
+      __type__: {object}
     },
-    __type__: {object: object$1}
+    __type__: {object}
   },
   legend: {
-    enabled: {'boolean': bool$1},
-    icons: {'boolean': bool$1},
+    enabled: {'boolean': bool},
+    icons: {'boolean': bool},
     left: {
-      visible: {'boolean': bool$1},
+      visible: {'boolean': bool},
       position: {string:['top-right','bottom-right','top-left','bottom-left']},
-      __type__: {object: object$1}
+      __type__: {object}
     },
     right: {
-      visible: {'boolean': bool$1},
+      visible: {'boolean': bool},
       position: {string:['top-right','bottom-right','top-left','bottom-left']},
-      __type__: {object: object$1}
+      __type__: {object}
     },
-    __type__: {object: object$1,'boolean': bool$1}
+    __type__: {object,'boolean': bool}
   },
   groups: {
-    visibility: {any: any$1},
-    __type__: {object: object$1}
+    visibility: {any},
+    __type__: {object}
   },
 
-  autoResize: {'boolean': bool$1},
-  throttleRedraw: {number: number$1}, // TODO: DEPRICATED see https://github.com/almende/vis/issues/2511
-  clickToUse: {'boolean': bool$1},
-  end: {number: number$1, date: date$1, string: string$1, moment: moment$2},
+  autoResize: {'boolean': bool},
+  throttleRedraw: {number}, // TODO: DEPRICATED see https://github.com/almende/vis/issues/2511
+  clickToUse: {'boolean': bool},
+  end: {number, date, string, moment},
   format: {
     minorLabels: {
-      millisecond: {string: string$1,'undefined': 'undefined'},
-      second: {string: string$1,'undefined': 'undefined'},
-      minute: {string: string$1,'undefined': 'undefined'},
-      hour: {string: string$1,'undefined': 'undefined'},
-      weekday: {string: string$1,'undefined': 'undefined'},
-      day: {string: string$1,'undefined': 'undefined'},
-      week: {string: string$1,'undefined': 'undefined'},
-      month: {string: string$1,'undefined': 'undefined'},
-      quarter: {string: string$1,'undefined': 'undefined'},
-      year: {string: string$1,'undefined': 'undefined'},
-      __type__: {object: object$1}
+      millisecond: {string,'undefined': 'undefined'},
+      second: {string,'undefined': 'undefined'},
+      minute: {string,'undefined': 'undefined'},
+      hour: {string,'undefined': 'undefined'},
+      weekday: {string,'undefined': 'undefined'},
+      day: {string,'undefined': 'undefined'},
+      week: {string,'undefined': 'undefined'},
+      month: {string,'undefined': 'undefined'},
+      quarter: {string,'undefined': 'undefined'},
+      year: {string,'undefined': 'undefined'},
+      __type__: {object}
     },
     majorLabels: {
-      millisecond: {string: string$1,'undefined': 'undefined'},
-      second: {string: string$1,'undefined': 'undefined'},
-      minute: {string: string$1,'undefined': 'undefined'},
-      hour: {string: string$1,'undefined': 'undefined'},
-      weekday: {string: string$1,'undefined': 'undefined'},
-      day: {string: string$1,'undefined': 'undefined'},
-      week: {string: string$1,'undefined': 'undefined'},
-      month: {string: string$1,'undefined': 'undefined'},
-      quarter: {string: string$1,'undefined': 'undefined'},
-      year: {string: string$1,'undefined': 'undefined'},
-      __type__: {object: object$1}
+      millisecond: {string,'undefined': 'undefined'},
+      second: {string,'undefined': 'undefined'},
+      minute: {string,'undefined': 'undefined'},
+      hour: {string,'undefined': 'undefined'},
+      weekday: {string,'undefined': 'undefined'},
+      day: {string,'undefined': 'undefined'},
+      week: {string,'undefined': 'undefined'},
+      month: {string,'undefined': 'undefined'},
+      quarter: {string,'undefined': 'undefined'},
+      year: {string,'undefined': 'undefined'},
+      __type__: {object}
     },
-    __type__: {object: object$1}
+    __type__: {object}
   },
   moment: {'function': 'function'},
-  height: {string: string$1, number: number$1},
+  height: {string, number},
   hiddenDates: {
-    start: {date: date$1, number: number$1, string: string$1, moment: moment$2},
-    end: {date: date$1, number: number$1, string: string$1, moment: moment$2},
-    repeat: {string: string$1},
-    __type__: {object: object$1, array: array$1}
+    start: {date, number, string, moment},
+    end: {date, number, string, moment},
+    repeat: {string},
+    __type__: {object, array}
   },
-  locale:{string: string$1},
+  locale:{string},
   locales:{
-    __any__: {any: any$1},
-    __type__: {object: object$1}
+    __any__: {any},
+    __type__: {object}
   },
-  max: {date: date$1, number: number$1, string: string$1, moment: moment$2},
-  maxHeight: {number: number$1, string: string$1},
-  maxMinorChars: {number: number$1},
-  min: {date: date$1, number: number$1, string: string$1, moment: moment$2},
-  minHeight: {number: number$1, string: string$1},
-  moveable: {'boolean': bool$1},
-  multiselect: {'boolean': bool$1},
-  orientation: {string: string$1},
-  showCurrentTime: {'boolean': bool$1},
-  showMajorLabels: {'boolean': bool$1},
-  showMinorLabels: {'boolean': bool$1},
-  showWeekScale: {'boolean': bool$1},
-  start: {date: date$1, number: number$1, string: string$1, moment: moment$2},
+  max: {date, number, string, moment},
+  maxHeight: {number, string},
+  maxMinorChars: {number},
+  min: {date, number, string, moment},
+  minHeight: {number, string},
+  moveable: {'boolean': bool},
+  multiselect: {'boolean': bool},
+  orientation: {string},
+  showCurrentTime: {'boolean': bool},
+  showMajorLabels: {'boolean': bool},
+  showMinorLabels: {'boolean': bool},
+  showWeekScale: {'boolean': bool},
+  snap: {'function': 'function', 'null': 'null'},
+  start: {date, number, string, moment},
   timeAxis: {
-    scale: {string: string$1,'undefined': 'undefined'},
-    step: {number: number$1,'undefined': 'undefined'},
-    __type__: {object: object$1}
+    scale: {string,'undefined': 'undefined'},
+    step: {number,'undefined': 'undefined'},
+    __type__: {object}
   },
-  width: {string: string$1, number: number$1},
-  zoomable: {'boolean': bool$1},
+  width: {string, number},
+  zoomable: {'boolean': bool},
   zoomKey: {string: ['ctrlKey', 'altKey', 'metaKey', '']},
-  zoomMax: {number: number$1},
-  zoomMin: {number: number$1},
-  zIndex: {number: number$1},
-  __type__: {object: object$1}
+  zoomMax: {number},
+  zoomMin: {number},
+  zIndex: {number},
+  __type__: {object}
 };
 
-let configureOptions$1 = {
+let configureOptions = {
   global: {
     alignCurrentTime: ['none', 'year', 'month', 'quarter', 'week', 'isoWeek', 'day', 'date', 'hour', 'minute', 'second'],   
     //yAxisOrientation: ['left','right'], // TDOO: enable as soon as Grahp2d doesn't crash when changing this on the fly
@@ -18920,7 +19198,7 @@ let configureOptions$1 = {
  */
 function Graph2d (container, items, groups, options) {
   // if the third element is options, the forth is groups (optionally);
-  if (!(Array.isArray(groups) || groups instanceof DataSet || groups instanceof DataView) && groups instanceof Object) {
+  if (!(Array.isArray(groups) || isDataViewLike(groups)) && groups instanceof Object) {
     var forthArgument = options;
     options = groups;
     groups = forthArgument;
@@ -18944,14 +19222,14 @@ function Graph2d (container, items, groups, options) {
       item: 'bottom'    // not relevant for Graph2d
     },
 
-    moment: moment,
+    moment: moment$3,
 
     width: null,
     height: null,
     maxHeight: null,
     minHeight: null
   };
-  this.options = util.deepExtend({}, this.defaultOptions);
+  this.options = availableUtils.deepExtend({}, this.defaultOptions);
 
   // Create the DOM, props, and emitter
   this._create(container);
@@ -18969,6 +19247,13 @@ function Graph2d (container, items, groups, options) {
     },
     hiddenDates: [],
     util: {
+      getScale() {
+        return me.timeAxis.step.scale;
+      },
+      getStep() {
+        return me.timeAxis.step.step;
+      },
+
       toScreen: me._toScreen.bind(me),
       toGlobalScreen: me._toGlobalScreen.bind(me), // this refers to the root.width
       toTime: me._toTime.bind(me),
@@ -19065,7 +19350,7 @@ Graph2d.prototype = new Core();
 
 Graph2d.prototype.setOptions = function (options) {
   // validate options
-  let errorFound = Validator.validate(options, allOptions$2);
+  let errorFound = Validator.validate(options, allOptions);
   if (errorFound === true) {
     console.log('%cErrors have been found in the supplied options object.', printStyle);
   }
@@ -19085,7 +19370,7 @@ Graph2d.prototype.setItems = function(items) {
   if (!items) {
     newDataSet = null;
   }
-  else if (items instanceof DataSet || items instanceof DataView) {
+  else if (isDataViewLike(items)) {
     newDataSet = typeCoerceDataSet(items);
   }
   else {
@@ -19123,7 +19408,7 @@ Graph2d.prototype.setGroups = function(groups) {
   if (!groups) {
     newDataSet = null;
   }
-  else if (groups instanceof DataSet || groups instanceof DataView) {
+  else if (isDataViewLike(groups)) {
     newDataSet = groups;
   }
   else {
@@ -19184,7 +19469,7 @@ Graph2d.prototype.getDataRange = function() {
       if (this.linegraph.groups[groupId].visible == true) {
         for (var i = 0; i < this.linegraph.groups[groupId].itemsData.length; i++) {
           var item = this.linegraph.groups[groupId].itemsData[i];
-          var value = util.convert(item.x, 'Date').valueOf();
+          var value = availableUtils.convert(item.x, 'Date').valueOf();
           min = min == null ? value : min > value ? value : min;
           max = max == null ? value : max < value ? value : max;
         }
@@ -19208,23 +19493,23 @@ Graph2d.prototype.getDataRange = function() {
 Graph2d.prototype.getEventProperties = function (event) {
   var clientX = event.center ? event.center.x : event.clientX;
   var clientY = event.center ? event.center.y : event.clientY;
-  var x = clientX - util.getAbsoluteLeft(this.dom.centerContainer);
-  var y = clientY - util.getAbsoluteTop(this.dom.centerContainer);
+  var x = clientX - availableUtils.getAbsoluteLeft(this.dom.centerContainer);
+  var y = clientY - availableUtils.getAbsoluteTop(this.dom.centerContainer);
   var time = this._toTime(x);
 
   var customTime = CustomTime.customTimeFromTarget(event);
 
-  var element = util.getTarget(event);
+  var element = availableUtils.getTarget(event);
   var what = null;
-  if (util.hasParent(element, this.timeAxis.dom.foreground))              {what = 'axis';}
-  else if (this.timeAxis2 && util.hasParent(element, this.timeAxis2.dom.foreground)) {what = 'axis';}
-  else if (util.hasParent(element, this.linegraph.yAxisLeft.dom.frame))   {what = 'data-axis';}
-  else if (util.hasParent(element, this.linegraph.yAxisRight.dom.frame))  {what = 'data-axis';}
-  else if (util.hasParent(element, this.linegraph.legendLeft.dom.frame))  {what = 'legend';}
-  else if (util.hasParent(element, this.linegraph.legendRight.dom.frame)) {what = 'legend';}
+  if (availableUtils.hasParent(element, this.timeAxis.dom.foreground))              {what = 'axis';}
+  else if (this.timeAxis2 && availableUtils.hasParent(element, this.timeAxis2.dom.foreground)) {what = 'axis';}
+  else if (availableUtils.hasParent(element, this.linegraph.yAxisLeft.dom.frame))   {what = 'data-axis';}
+  else if (availableUtils.hasParent(element, this.linegraph.yAxisRight.dom.frame))  {what = 'data-axis';}
+  else if (availableUtils.hasParent(element, this.linegraph.legendLeft.dom.frame))  {what = 'legend';}
+  else if (availableUtils.hasParent(element, this.linegraph.legendRight.dom.frame)) {what = 'legend';}
   else if (customTime != null)                {what = 'custom-time';}
-  else if (util.hasParent(element, this.currentTime.bar))                 {what = 'current-time';}
-  else if (util.hasParent(element, this.dom.center))                      {what = 'background';}
+  else if (availableUtils.hasParent(element, this.currentTime.bar))                 {what = 'current-time';}
+  else if (availableUtils.hasParent(element, this.dom.center))                      {what = 'background';}
 
   var value = [];
   var yAxisLeft = this.linegraph.yAxisLeft;
@@ -19255,12 +19540,13 @@ Graph2d.prototype.getEventProperties = function (event) {
  * @private
  */
 Graph2d.prototype._createConfigurator = function () {
-  return new Configurator(this, this.dom.container, configureOptions$1);
+  return new Configurator(this, this.dom.container, configureOptions);
 };
 
 // Locales have to be supplied by the user.
+
 const defaultLanguage = getNavigatorLanguage();
-moment$3.locale(defaultLanguage);
+moment$4.locale(defaultLanguage);
 
 const timeline = {
   Core,
@@ -19274,6 +19560,7 @@ const timeline = {
       Item,
       BackgroundItem,
       BoxItem,
+      ClusterItem,
       PointItem,
       RangeItem
     },
