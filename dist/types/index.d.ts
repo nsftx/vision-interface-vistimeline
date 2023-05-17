@@ -25,7 +25,6 @@ export type DataViewDataGroup = DataView<DataGroup, 'id'>;
 export type DataViewDataItem = DataView<DataItem, 'id'>;
 
 import { MomentInput, MomentFormatSpecification, Moment } from 'moment';
-import { IFilterXSSOptions } from 'xss';
 export type MomentConstructor1 =
   (inp?: MomentInput, format?: MomentFormatSpecification, strict?: boolean) => Moment;
 export type MomentConstructor2 =
@@ -40,7 +39,7 @@ export type HeightWidthType = IdType;
 export type TimelineItemType = 'box' | 'point' | 'range' | 'background';
 export type TimelineAlignType = 'auto' | 'center' | 'left' | 'right';
 export type TimelineTimeAxisScaleType = 'millisecond' | 'second' | 'minute' | 'hour' |
-  'weekday' | 'day' | 'week' | 'month' | 'year';
+  'weekday' | 'day' | 'month' | 'year';
 export type TimelineEventPropertiesResultWhatType = 'item' | 'background' | 'axis' |
   'group-label' | 'custom-time' | 'current-time';
 export type TimelineEvents =
@@ -97,7 +96,6 @@ export interface DataItem {
   type?: string;
   editable?: TimelineItemEditableType;
   selectable?: boolean;
-  limitSize?: boolean;
 }
 
 export interface SubGroupStackOptions {
@@ -214,11 +212,6 @@ export interface TimelineTooltipOption {
   template?: (item: TimelineItem, editedData?: TimelineItem) => string;
 }
 
-export interface TimelineXSSProtectionOption {
-  disabled: boolean;
-  filterOptions?: IFilterXSSOptions;
-}
-
 export type TimelineOptionsConfigureFunction = (option: string, path: string[]) => boolean;
 export type TimelineOptionsConfigureType = boolean | TimelineOptionsConfigureFunction;
 export type TimelineOptionsDataAttributesType = boolean | string | string[];
@@ -234,7 +227,7 @@ export type TimelineOptionsMarginType = number | TimelineMarginOption;
 export type TimelineOptionsOrientationType = string | TimelineOrientationOption;
 export type TimelineOptionsSnapFunction = (date: Date, scale: string, step: number) => Date | number;
 export type TimelineOptionsSnapType = null | TimelineOptionsSnapFunction;
-export type TimelineOptionsTemplateFunction = (item?: any, element?: any, data?: any) => string | HTMLElement;
+export type TimelineOptionsTemplateFunction = (item?: any, element?: any, data?: any) => string;
 export type TimelineOptionsComparisonFunction = (a: any, b: any) => number;
 export type TimelineOptionsGroupHeightModeType = 'auto' | 'fixed' | 'fitItems';
 export type TimelineOptionsClusterCriteriaFunction = (firstItem: TimelineItem, secondItem: TimelineItem) => boolean;
@@ -316,10 +309,8 @@ export interface TimelineOptions {
   width?: HeightWidthType;
   zoomable?: boolean;
   zoomKey?: TimelineOptionsZoomKey;
-  zoomFriction?: number;
   zoomMax?: number;
   zoomMin?: number;
-  xss?: TimelineXSSProtectionOption;
 }
 
 /**
@@ -330,7 +321,7 @@ export interface TimelineOptions {
 export type TimelineAnimationType = boolean | AnimationOptions;
 
 export interface TimelineAnimationOptions {
-  animation?: Partial<TimelineAnimationType>;
+  animation?: TimelineAnimationType;
   zoom?: boolean;
 }
 
@@ -384,11 +375,6 @@ export interface TimelineEventPropertiesResult {
    * The original click event.
    */
   event: Event;
-
-  /**
-   * If the event is clustered.
-   */
-  isCluster: boolean;
 }
 
 export type DataItemCollectionType = DataItem[] | DataInterfaceDataItem;
