@@ -33,8 +33,8 @@ of the project.
 <html>
 <head>
   <title>Timeline</title>
-  <script type="text/javascript" src="//unpkg.com/vis-timeline@latest/standalone/umd/vis-timeline-graph2d.min.js"></script>
-  <link href="//unpkg.com/vis-timeline@latest/styles/vis-timeline-graph2d.min.css" rel="stylesheet" type="text/css" />
+  <script type="text/javascript" src="https://unpkg.com/vis-timeline@latest/standalone/umd/vis-timeline-graph2d.min.js"></script>
+  <link href="https://unpkg.com/vis-timeline@latest/styles/vis-timeline-graph2d.min.css" rel="stylesheet" type="text/css" />
   <style type="text/css">
     #visualization {
       width: 600px;
@@ -88,7 +88,7 @@ import { Timeline } from "vis-timeline/standalone";
 
 This has no dependencies and therefore is great for things like MWEs but has
 more issues with interoperability and bundle bloat. For more information see the
-following (example)[https://visjs.github.io/vis-timeline/examples/timeline/standalone-build.html].
+following [example](https://visjs.github.io/vis-timeline/examples/timeline/standalone-build.html).
 
 ### Peer build
 
@@ -105,8 +105,7 @@ import { Timeline } from "vis-timeline/peer";
 
 For this build to work you have to load Vis Data and Moment (including locales
 except English) packages yourself. The advantage here is that it works well with
-other packages. For more information see the following
-(example)[https://visjs.github.io/vis-timeline/examples/timeline/peer-build.html].
+other packages. For more information see the following [example](https://visjs.github.io/vis-timeline/examples/timeline/peer-build.html).
 
 ### ESNext build
 
