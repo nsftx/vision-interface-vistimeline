@@ -1,0 +1,36 @@
+name: Nsoft SonarQube Analysis
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    types: [opened, synchronize, reopened]
+jobs:
+  sonar_scan:
+    name: SonarQube scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - name: Get metadata
+        shell: bash
+        run:
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+          echo "args=-Dsonar.branch.name=${GITHUB_REF#refs/heads/}" >> $GITHUB_ENV;
+          elif [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+          echo "args=-Dsonar.pullrequest.branch=${{ github.event.pull_request.head.ref }}
+          -Dsonar.pullrequest.key=${{ github.event.pull_request.number }}
+          -Dsonar.pullrequest.base=${{ github.event.pull_request.base.ref }}
+          -Dsonar.scm.revision=${{ github.event.pull_request.head.sha }}" >> $GITHUB_ENV;
+          fi
+      - uses: sonarsource/sonarqube-scan-action@master
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_GLOBAL_ANALYSIS_TOKEN }}
+          SONAR_HOST_URL: https://sonarqube.nsoft.io
+        with:
+          args: ${{ env.args }}
+      - uses: sonarsource/sonarqube-quality-gate-action@master
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_GLOBAL_ANALYSIS_TOKEN }}
