@@ -5,7 +5,7 @@
  * Create a fully customizable, interactive timeline with items and ranges.
  *
  * @version 7.7.2.1
- * @date    2025-03-06T11:42:49.680Z
+ * @date    2025-03-06T11:58:49.678Z
  *
  * @copyright (c) 2011-2017 Almende B.V, http://almende.com
  * @copyright (c) 2017-2019 visjs contributors, https://github.com/visjs
@@ -24,6 +24,8 @@
  * vis.js may be distributed under either license.
  */
 
+import moment$5 from 'moment';
+
 var commonjsGlobal = typeof globalThis !== 'undefined' ? globalThis : typeof window !== 'undefined' ? window : typeof global !== 'undefined' ? global : typeof self !== 'undefined' ? self : {};
 
 function getDefaultExportFromCjs (x) {
@@ -34,12 +36,12 @@ function commonjsRequire(path) {
 	throw new Error('Could not dynamically require "' + path + '". Please configure the dynamicRequireTargets or/and ignoreDynamicRequires option of @rollup/plugin-commonjs appropriately for this require call to work.');
 }
 
-var moment$5 = {exports: {}};
+var moment$4 = {exports: {}};
 
 var hasRequiredMoment;
 
 function requireMoment () {
-	if (hasRequiredMoment) return moment$5.exports;
+	if (hasRequiredMoment) return moment$4.exports;
 	hasRequiredMoment = 1;
 	(function (module, exports) {
 (function (global, factory) {
@@ -5721,8 +5723,8 @@ function requireMoment () {
 		    return hooks;
 
 		}))); 
-	} (moment$5));
-	return moment$5.exports;
+	} (moment$4));
+	return moment$4.exports;
 }
 
 (function (module, exports) {
@@ -24145,11 +24147,8 @@ function isDataViewLike$1(idProp, v) {
 // use this instance. Else, load via commonjs.
 //
 // Note: This doesn't work in ESM.
-var moment$3 = typeof window !== 'undefined' && window['moment'] || requireMoment();
-var moment$4 = /*@__PURE__*/getDefaultExportFromCjs(moment$3);
-
-var momentExports = requireMoment();
-var moment$2 = /*@__PURE__*/getDefaultExportFromCjs(momentExports);
+var moment$2 = typeof window !== 'undefined' && window['moment'] || moment$5;
+var moment$3 = /*@__PURE__*/getDefaultExportFromCjs(moment$2);
 
 var lib$1 = {exports: {}};
 
@@ -25914,7 +25913,7 @@ function convert(object, type) {
     case "number":
     case "Number":
       if (isString(object) && !isNaN(Date.parse(object))) {
-        return moment$2(object).valueOf();
+        return moment$5(object).valueOf();
       } else {
         // @TODO: I don't think that Number and String constructors are a good idea.
         // This could also fail if the object doesn't have valueOf method or if it's redefined.
@@ -25936,25 +25935,25 @@ function convert(object, type) {
       }
     case "Moment":
       if (isNumber(object)) {
-        return moment$2(object);
+        return moment$5(object);
       }
       if (object instanceof Date) {
-        return moment$2(object.valueOf());
-      } else if (moment$2.isMoment(object)) {
-        return moment$2(object);
+        return moment$5(object.valueOf());
+      } else if (moment$5.isMoment(object)) {
+        return moment$5(object);
       }
       if (isString(object)) {
         match = ASPDateRegex.exec(object);
         if (match) {
           // object is an ASP date
-          return moment$2(Number(match[1])); // parse number
+          return moment$5(Number(match[1])); // parse number
         }
 
         match = NumericRegex.exec(object);
         if (match) {
-          return moment$2(Number(object));
+          return moment$5(Number(object));
         }
-        return moment$2(object); // parse string
+        return moment$5(object); // parse string
       } else {
         throw new TypeError("Cannot convert object of type " + getType(object) + " to type " + type);
       }
@@ -25963,7 +25962,7 @@ function convert(object, type) {
         return new Date(object);
       } else if (object instanceof Date) {
         return object.toISOString();
-      } else if (moment$2.isMoment(object)) {
+      } else if (moment$5.isMoment(object)) {
         return object.toDate().toISOString();
       } else if (isString(object)) {
         match = ASPDateRegex.exec(object);
@@ -25971,7 +25970,7 @@ function convert(object, type) {
           // object is an ASP date
           return new Date(Number(match[1])).toISOString(); // parse number
         } else {
-          return moment$2(object).format(); // ISO 8601
+          return moment$5(object).format(); // ISO 8601
         }
       } else {
         throw new Error("Cannot convert object of type " + getType(object) + " to type ISODate");
@@ -25979,7 +25978,7 @@ function convert(object, type) {
     case "ASPDate":
       if (isNumber(object)) {
         return "/Date(" + object + ")/";
-      } else if (object instanceof Date || moment$2.isMoment(object)) {
+      } else if (object instanceof Date || moment$5.isMoment(object)) {
         return "/Date(" + object.valueOf() + ")/";
       } else if (isString(object)) {
         match = ASPDateRegex.exec(object);
@@ -26819,7 +26818,7 @@ var Range = /*#__PURE__*/function (_Component) {
     var _this;
     _classCallCheck(this, Range);
     _this = _super.call(this);
-    var now = moment$4().hours(0).minutes(0).seconds(0).milliseconds(0);
+    var now = moment$3().hours(0).minutes(0).seconds(0).milliseconds(0);
     var start = now.clone().add(-3, 'days').valueOf();
     var end = now.clone().add(3, 'days').valueOf();
     _this.millisecondsPerPixelCache = undefined;
@@ -26842,7 +26841,7 @@ var Range = /*#__PURE__*/function (_Component) {
       rtl: false,
       start: null,
       end: null,
-      moment: moment$4,
+      moment: moment$3,
       direction: 'horizontal',
       // 'horizontal' or 'vertical'
       moveable: true,
@@ -28046,7 +28045,7 @@ var TimeStep = /*#__PURE__*/function () {
     */
   function TimeStep(start, end, minimumStep, hiddenDates, options) {
     _classCallCheck(this, TimeStep);
-    this.moment = options && options.moment || moment$4;
+    this.moment = options && options.moment || moment$3;
     this.options = options ? options : {};
 
     // variables
@@ -28762,7 +28761,7 @@ var TimeStep = /*#__PURE__*/function () {
   }], [{
     key: "snap",
     value: function snap(date, scale, step) {
-      var clone = moment$4(date);
+      var clone = moment$3(date);
       if (scale == 'year') {
         var year = clone.year() + Math.round(clone.month() / 12);
         clone = clone.year(Math.round(year / step) * step).month(0).date(0).hours(0).minutes(0).seconds(0).milliseconds(0);
@@ -28925,7 +28924,7 @@ var TimeAxis = /*#__PURE__*/function (_Component) {
       showWeekScale: false,
       maxMinorChars: 7,
       format: availableUtils.extend({}, TimeStep.FORMAT),
-      moment: moment$4,
+      moment: moment$3,
       timeAxis: null
     };
     _this.options = availableUtils.extend({}, _this.defaultOptions);
@@ -28966,11 +28965,11 @@ var TimeAxis = /*#__PURE__*/function (_Component) {
         // apply locale to moment.js
         // TODO: not so nice, this is applied globally to moment.js
         if ('locale' in options) {
-          if (typeof moment$4.locale === 'function') {
+          if (typeof moment$3.locale === 'function') {
             // moment.js 2.8.1+
-            moment$4.locale(options.locale);
+            moment$3.locale(options.locale);
           } else {
-            moment$4.lang(options.locale);
+            moment$3.lang(options.locale);
           }
         }
       }
@@ -29864,7 +29863,7 @@ var CustomTime = /*#__PURE__*/function (_Component) {
 
     // default options
     _this.defaultOptions = {
-      moment: moment$4,
+      moment: moment$3,
       locales: locales,
       locale: 'en',
       id: undefined,
@@ -31683,7 +31682,7 @@ var CurrentTime = /*#__PURE__*/function (_Component) {
       rtl: false,
       showCurrentTime: true,
       alignCurrentTime: undefined,
-      moment: moment$4,
+      moment: moment$3,
       locales: locales,
       locale: 'en'
     };
@@ -34020,9 +34019,9 @@ var Item = /*#__PURE__*/function () {
           templateFunction = _bindInstanceProperty$1(_context4 = this.options.tooltipOnItemUpdateTime.template).call(_context4, this);
           content = templateFunction(this.data);
         } else {
-          content = "start: ".concat(moment$4(this.data.start).format('MM/DD/YYYY hh:mm'));
+          content = "start: ".concat(moment$3(this.data.start).format('MM/DD/YYYY hh:mm'));
           if (this.data.end) {
-            content += "<br> end: ".concat(moment$4(this.data.end).format('MM/DD/YYYY hh:mm'));
+            content += "<br> end: ".concat(moment$3(this.data.end).format('MM/DD/YYYY hh:mm'));
           }
         }
         this.dom.onItemUpdateTimeTooltip.innerHTML = availableUtils.xss(content);
@@ -42352,7 +42351,7 @@ var Timeline = /*#__PURE__*/function (_Core) {
         item: 'bottom' // not relevant
       },
 
-      moment: moment$4
+      moment: moment$3
     };
     _this.options = availableUtils.deepExtend({}, _this.defaultOptions);
     options && availableUtils.setupXSSProtection(options.xss);
@@ -46771,7 +46770,7 @@ function Graph2d(container, items, groups, options) {
       item: 'bottom' // not relevant for Graph2d
     },
 
-    moment: moment$4,
+    moment: moment$3,
     width: null,
     height: null,
     maxHeight: null,
@@ -47090,7 +47089,7 @@ Graph2d.prototype._createConfigurator = function () {
 
 console.warn(["This build has been deprecated.", "", "In case you are importing this through a URL it will result in a 404 eventually.", "In case you are importing this through Node it will be replaced by the peer build eventually.", "", "Please use the peer or standalone build instead.", "Peer: https://visjs.github.io/vis-timeline/examples/timeline/peer-build.html", "Standalone: https://visjs.github.io/vis-timeline/examples/timeline/standalone-build.html"].join("\n"));
 var defaultLanguage = getNavigatorLanguage();
-moment$4.locale(defaultLanguage);
+moment$3.locale(defaultLanguage);
 var timeline = {
   Core: Core,
   DateUtil: DateUtil,
@@ -47129,10 +47128,10 @@ var bundleLegacy = {
   Timeline: Timeline,
   Graph2d: Graph2d,
   timeline: timeline,
-  moment: moment$4,
+  moment: moment$3,
   Hammer: Hammer,
   keycharm: keycharm
 };
 
-export { DOMutil, DataSet, DataView, Graph2d, Hammer, Queue, Timeline, bundleLegacy as default, keycharm, moment$4 as moment, timeline, util$2 as util };
+export { DOMutil, DataSet, DataView, Graph2d, Hammer, Queue, Timeline, bundleLegacy as default, keycharm, moment$3 as moment, timeline, util$2 as util };
 //# sourceMappingURL=vis-timeline-graph2d.esm.js.map
